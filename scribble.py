@@ -43,7 +43,8 @@ if column_family not in sysmgr.get_keyspace_column_families(keyspace):
 					key_alias='data')
 
 def insert(line):
-	column = strftime('%Y%m%d%H%M')
+	#column = strftime('%Y%m%d%H%M')
+	column = str(int(time.time()))
 	row = gethostname() + str(uuid.uuid1()) + strftime('%S')
 	row = str(int(time.time()))+':'+gethostname() +':'+ str(uuid.uuid1()) 
 	pool = pycassa.ConnectionPool( keyspace	= keyspace, server_list	= server_list)
