@@ -15,7 +15,7 @@ usage:
 
 """
 
-import pycassa, os, sys, time, uuid, random, conf
+import pycassa, sys, time, conf
 from pycassa.system_manager import *
 
 keyspace 	= conf.cassandra.keyspace
