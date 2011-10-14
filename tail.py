@@ -37,7 +37,8 @@ def tail():
         try:
             rows = cf.get(str(start_time+ii))
             for i in rows.values():
-                print i
+                sys.stdout.writelines(i+'\n')
+                sys.stdout.flush()
         except pycassa.NotFoundException:
             pass
         time.sleep(1)
