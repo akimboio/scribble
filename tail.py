@@ -41,7 +41,7 @@ def tail():
                 sys.stdout.flush()
         except pycassa.NotFoundException:
             pass
-        except thrift.transport.TTransport.TTransportException
+        except thrift.transport.TTransport.TTransportException:
             pass
         except Exception, e:
             print e
