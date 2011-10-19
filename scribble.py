@@ -21,6 +21,7 @@ import pycassa, os, sys, time, uuid, random, conf
 from time	import strftime
 from socket	import gethostname
 from pycassa.system_manager import *
+import thrift
 
 keyspace 	= conf.cassandra.keyspace
 server_list	= conf.cassandra.hosts
