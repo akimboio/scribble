@@ -17,6 +17,7 @@ usage:
 
 import pycassa, sys, time, conf
 from pycassa.system_manager import *
+import thrift
 
 keyspace 	= conf.cassandra.keyspace
 server_list	= conf.cassandra.hosts
