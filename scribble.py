@@ -2,7 +2,6 @@
 """ 
 scribble.py - python logging utility to cassandra
 
-@author: Micah Hausler
 @organization: retickr
 @contact: micah.hausler+scribble@retickr.com
 
@@ -42,20 +41,21 @@ if column_family not in sysmgr.get_keyspace_column_families(keyspace):
 					key_validation_class=UTF8_TYPE,
 					key_alias='data')
 
-def insert(line):
-	column = str(int(time.time()))
+def insert(line, cf):
 	row = gethostname() + str(uuid.uuid1()) + strftime('%S')
 	row = str(int(time.time()))+':'+gethostname() +':'+ str(uuid.uuid1()) 
-	pool = pycassa.ConnectionPool( keyspace	= keyspace, server_list	= server_list)
-	cf = pycassa.ColumnFamily(pool,column_family)
+
 	cf.insert(column,{row : line})
 	cf.insert('lastwrite', {'time' : column })
 	
 def run(): 
+	column = str(int(time.time()))
+	pool = pycassa.ConnectionPool( keyspace	= keyspace, server_list	= server_list)
+	cf = pycassa.ColumnFamily(pool,column_family)
 	while True:
 		line = sys.stdin.readline().rstrip()
 		if line:
-			insert(line)
+			insert(line, cf)
 			#print line
 		else:
 			pass
