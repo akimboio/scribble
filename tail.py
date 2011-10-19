@@ -41,7 +41,10 @@ def tail():
                 sys.stdout.flush()
         except pycassa.NotFoundException:
             pass
-        except pycassa.TTransportException:
+        except thrift.transport.TTransport.TTransportException
+            pass
+        except Exception, e:
+            print e
             pass
         time.sleep(1)
         ii=ii+1
