@@ -44,7 +44,6 @@ if column_family not in sysmgr.get_keyspace_column_families(keyspace):
 def insert(line, cf):
 	row = gethostname() + str(uuid.uuid1()) + strftime('%S')
 	row = str(int(time.time()))+':'+gethostname() +':'+ str(uuid.uuid1()) 
-
 	cf.insert(column,{row : line})
 	cf.insert('lastwrite', {'time' : column })
 	
@@ -53,11 +52,19 @@ def run():
 	pool = pycassa.ConnectionPool( keyspace	= keyspace, server_list	= server_list)
 	cf = pycassa.ColumnFamily(pool,column_family)
 	while True:
-		line = sys.stdin.readline().rstrip()
-		if line:
-			insert(line, cf)
-			#print line
-		else:
-			pass
+        try:
+		    line = sys.stdin.readline().rstrip()
+		    if line:
+		    	insert(line, cf)
+		    	#print line
+		    else:
+		    	pass
+        except pycassa.NotFoundException:
+            pass
+        except thrift.transport.TTransport.TTransportException:
+            pass
+        except Exception, e:
+            print e 
+            pass
 run()
 
