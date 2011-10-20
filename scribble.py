@@ -42,11 +42,12 @@ if column_family not in sysmgr.get_keyspace_column_families(keyspace):
 					key_validation_class=UTF8_TYPE,
 					key_alias='data')
 
-def insert(line, cf,column):
-	row = gethostname() + str(uuid.uuid1()) + strftime('%S')
-	row = str(int(time.time()))+':'+gethostname() +':'+ str(uuid.uuid1()) 
-	cf.insert(column,{row : line})
-	cf.insert('lastwrite', {'time' : column })
+def insert(line, cf):
+    column = str(int(time.time()))
+    row = gethostname() + str(uuid.uuid1()) + strftime('%S')
+    row = str(int(time.time()))+':'+gethostname() +':'+ str(uuid.uuid1()) 
+    cf.insert(column,{row : line})
+    cf.insert('lastwrite', {'time' : column })
 	
 def run(): 
     column = str(int(time.time()))
@@ -56,7 +57,7 @@ def run():
         try:
 		    line = sys.stdin.readline().rstrip()
 		    if line:
-		    	insert(line, cf,column)
+		    	insert(line, cf)
 		    	#print line
 		    else:
 		    	pass
