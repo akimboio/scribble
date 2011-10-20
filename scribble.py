@@ -49,10 +49,10 @@ def insert(line, cf):
 	cf.insert('lastwrite', {'time' : column })
 	
 def run(): 
-	column = str(int(time.time()))
-	pool = pycassa.ConnectionPool( keyspace	= keyspace, server_list	= server_list)
-	cf = pycassa.ColumnFamily(pool,column_family)
-	while True:
+    column = str(int(time.time()))
+    pool = pycassa.ConnectionPool( keyspace	= keyspace, server_list	= server_list)
+    cf = pycassa.ColumnFamily(pool,column_family)
+    while True:
         try:
 		    line = sys.stdin.readline().rstrip()
 		    if line:
