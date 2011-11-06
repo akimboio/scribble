@@ -40,14 +40,18 @@ def tail():
             for i in rows.values():
                 sys.stdout.writelines(i+'\n')
                 sys.stdout.flush()
-        except pycassa.NotFoundException:
-            pass
         except thrift.transport.TTransport.TTransportException:
             pass
         except Exception, e:
-            print e
+            #print e
             pass
-        time.sleep(1)
-        ii=ii+1
+        except KeyboardInterupt:
+            exit()
+        except: pass
+        try:
+            time.sleep(1)
+            ii=ii+1
+        except KeyboardInterrupt:
+            exit()
 
 tail()
