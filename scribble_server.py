@@ -190,8 +190,6 @@ class scribble_server:
                             for col
                             in self.logBuffer[columnFamily]])
 
-            print "cf: {0} row count: {1}, self running: {2}".format(columnFamily, rowCount, self.running)
-
             # It's like this, see?  If we are shutting down, forget the buffering
             # and flush it all to Cassandra!
             if (rowCount >= self.maxLogBufferSize) or not self.running:

@@ -17,55 +17,44 @@ usage:
 			<column family> is the name of the column family, probably corresponding to vhost
 """
 
-import pycassa, os, sys, time, uuid, random, conf
-from time	import strftime
-from socket	import gethostname
-from pycassa.system_manager import *
-import thrift
+import cPickle
+import sys
+import socket
+import time
 
-keyspace 	= conf.cassandra.keyspace
-server_list	= conf.cassandra.hosts
-server_port	= conf.cassandra.server_port
+import scribble_config as conf
 
-if len(sys.argv) >= 2:
-	column_family = sys.argv[1]
-else:
-	sys.exit("You must supply a column family")
+def writeToServer(logMessage, columnFamily):
+    data = cPickle.dumps({'log':logMessage, 'cf':columnFamily})
 
-sysmgr= SystemManager(server_list[random.randint(0,len(server_list)-1)]+':'+str(server_port))
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.connect((conf.server.host, conf.server.port))
 
-if column_family not in sysmgr.get_keyspace_column_families(keyspace):
-	sysmgr.create_column_family(
-					keyspace=keyspace,
-					name=column_family,
-					comparator_type=UTF8_TYPE,
-					key_validation_class=UTF8_TYPE,
-					key_alias='data')
+    # Loop until we've sent all of the data
+    while len(data) > 0:
+        bytesSent = s.send(data)
 
-def insert(line, cf):
-    column = str(int(time.time()))
-    row = gethostname() + str(uuid.uuid1()) + strftime('%S')
-    row = str(int(time.time()))+':'+gethostname() +':'+ str(uuid.uuid1()) 
-    cf.insert(column,{row : line})
-    cf.insert('lastwrite', {'time' : column })
+        data = data[bytesSent:]
+
+        time.sleep(conf.client.sleepTimeBetweenSends)
+
+    s.close()
 	
-def run(): 
-    pool = pycassa.ConnectionPool( keyspace	= keyspace, server_list	= server_list)
-    cf = pycassa.ColumnFamily(pool,column_family)
-    while True:
-        try:
-		    line = sys.stdin.readline().rstrip()
-		    if line:
-		    	insert(line, cf)
-		    	#print line
-		    else:
-		    	pass
-        except pycassa.NotFoundException:
-            pass
-        except thrift.transport.TTransport.TTransportException:
-            pass
-        except Exception, e:
-            print e 
-            pass
-run()
+def run(columnFamily): 
+    try:
+        while True:
+            logMessage = sys.stdin.readline().rstrip()
+            if logMessage:
+                writeToServer(logMessage, columnFamily)
+    except KeyboardInterrupt:
+        return
 
+if __name__ == "__main__":
+    if len(sys.argv) >= 2:
+        columnFamily = sys.argv[1]
+    else:
+        sys.exit("You must supply a column family")
+
+    print "Using column family '{0}'".format(columnFamily)
+
+    run(columnFamily)
