@@ -21,23 +21,34 @@ import thrift
 import scribble_config as conf
 
 class scribble_server:
-    READ_FLAGS = select.POLLIN | select.POLLPRI
-    CLOSE_FLAGS = select.POLLERR | select.POLLHUP | select.POLLNVAL
+    POLL_READ_FLAGS = select.POLLIN | select.POLLPRI
+    POLL_CLOSE_FLAGS = select.POLLERR | select.POLLHUP | select.POLLNVAL
 
-    def __init__(self):
+    EPOLL_READ_FLAGS = select.EPOLLIN | select.EPOLLPRI
+    EPOLL_CLOSE_FLAGS = select.EPOLLERR | select.EPOLLHUP
+
+    READ_FLAGS = POLL_READ_FLAGS
+    CLOSE_FLAGS = POLL_CLOSE_FLAGS
+
+    def __init__(self, useEpoll = False,
+                 intervalBetweenPolls = conf.server.intervalBetweenPolls,
+                 maxPollWait = conf.server.maxPollWait):
         # Do misc configuration
         self.running = True
 
+        # Status
         self.clientCount = 0
         self.openClientCount = 0
         self.wentWrong = 0
         self.pushCount = 0
         self.popCount = 0
+        self.rowsFlushed = 0
 
+        self.useEpoll = useEpoll
         self.host = conf.server.host
         self.port = conf.server.port
-        self.intervalBetweenPolls = conf.server.intervalBetweenPolls
-        self.maxPollWait = conf.server.maxPollWait
+        self.intervalBetweenPolls = intervalBetweenPolls
+        self.maxPollWait = maxPollWait
         self.maxLogBufferSize = conf.server.maxLogBufferSize
 
         self.keyspace 	= conf.cassandra.keyspace
@@ -75,7 +86,14 @@ class scribble_server:
         self.clientLogData = dict()
 
         # set up the poller
-        self.poller = select.poll()
+        if self.useEpoll:
+            self.poller = select.epoll()
+            scribble_server.READ_FLAGS = scribble_server.EPOLL_READ_FLAGS
+            scribble_server.CLOSE_FLAGS = scribble_server.EPOLL_CLOSE_FLAGS
+        else:
+            self.poller = select.poll()
+            scribble_server.READ_FLAGS = scribble_server.POLL_READ_FLAGS
+            scribble_server.CLOSE_FLAGS = scribble_server.POLL_CLOSE_FLAGS
 
         self.poller.register(self.listenSocket, scribble_server.READ_FLAGS)
 
@@ -149,8 +167,9 @@ class scribble_server:
                     time.sleep(conf.server.flushWaitTime)
 
             def flushToCassandra(self, columnFamily, columnDictionary):
-                print "Inserting into column family '{0}'".format(columnFamily)
-                pprint.pprint(columnDictionary)
+                self_.rowsFlushed += sum([len(val) for val in columnDictionary.values()])
+#                print "Inserting into column family '{0}'".format(columnFamily)
+#                pprint.pprint(columnDictionary)
 #                if columnFamily not in self.sysmgr.get_keyspace_column_families(self_.keyspace):
 #                    self.sysmgr.create_column_family(
 #                                    keyspace=self_.keyspace,
@@ -288,12 +307,18 @@ class scribble_server:
         [self.poller.unregister(client) for client in
             [clientTuple[0] for clientTuple in self.fdToClientTupleLookup.values()]]
 
+        self.listenSocket.close()
+
+        self.fdToClientTupleLookup.clear()
+        self.clientLogData.clear()
+
+        # Shut down the flush thread
         self.flushThread.shutdown()
         self.flushThread.join()
         sys.stdout.flush()
 
-        self.report()
-
+        self.unlabeledReport()
+    
     def report(self):
         print "Shutting down"
         print "\tServed clients: {0}".format(self.clientCount)
@@ -302,9 +327,34 @@ class scribble_server:
         print "\tColumn families not flushed: {0}".format(len(self.flushQueue))
         print "\tTotal pushes to queue: {0}".format(self.pushCount)
         print "\tTotal pops from queue: {0}".format(self.popCount)
+        print "\tTotal rows flushed: {0}".format(self.rowsFlushed)
+
+    def unlabeledReport(self):
+        print "{0} {1} {2} {3} {4} {5} {6}".format(
+                self.clientCount,
+                self.openClientCount,
+                self.wentWrong,
+                len(self.flushQueue),
+                self.pushCount,
+                self.popCount,
+                self.rowsFlushed)
 
 
 if __name__ == "__main__":
-    srv = scribble_server()
-    srv.run()
-    srv.shutdown()
+    try:
+        useEpoll = bool(sys.argv[1])
+        intervalBetweenPolls = float(sys.argv[2])
+        maxPollWait = float(sys.argv[3])
+    except:
+        print "usage: scribble_server.py UseEpoll intervalBetweenPolls maxPollWait"
+        sys.exit(0)
+
+    try:
+        srv = scribble_server(useEpoll=True,
+                              intervalBetweenPolls=intervalBetweenPolls,
+                              maxPollWait=maxPollWait)
+        srv.run()
+        srv.shutdown()
+    except Exception, e:
+        print e
+        sys.exit(0)

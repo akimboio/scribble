@@ -27,18 +27,21 @@ import scribble_config as conf
 def writeToServer(logMessage, columnFamily):
     data = cPickle.dumps({'log':logMessage, 'cf':columnFamily})
 
-    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    s.connect((conf.server.host, conf.server.port))
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.connect((conf.server.host, conf.server.port))
 
-    # Loop until we've sent all of the data
-    while len(data) > 0:
-        bytesSent = s.send(data)
+        # Loop until we've sent all of the data
+        while len(data) > 0:
+            bytesSent = s.send(data)
 
-        data = data[bytesSent:]
+            data = data[bytesSent:]
 
-        time.sleep(conf.client.sleepTimeBetweenSends)
+            time.sleep(conf.client.sleepTimeBetweenSends)
 
-    s.close()
+        s.close()
+    except:
+        pass
 	
 def run(columnFamily): 
     try:

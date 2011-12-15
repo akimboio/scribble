@@ -1,14 +1,19 @@
 #!/usr/bin/env python
 # Created: 9:15 AM, December 12, 2011
+# Note: the sever will not shutdown and report normally in unit tests, because the flushing method is being overridden
 
 import unittest
 import socket
 import time
 import types
+import cPickle
+import threading
+import pprint
 
 import scribble_config as conf
 import scribble_server
-import cPickle
+import scribble_client
+import hammer
 
 class serverTest(unittest.TestCase):
     def logToServer(self, logMessage):
@@ -34,7 +39,7 @@ class serverTest(unittest.TestCase):
 
         # Override the buffer flushing mechanism so we can observ
         # the flushing behavior of the server
-        self.bufferedOutput = []
+        self.bufferedOutput = dict()
 
         # Becuase 'self' will have a different meaning when
         # unitTestFlushLogBuffer becomes a method of the scribble_server,
@@ -45,7 +50,9 @@ class serverTest(unittest.TestCase):
 
         def unitTestPushToFlushQueue(self, logTuple):
             (cf, data) = logTuple
-            self_.bufferedOutput = data
+
+            self_.bufferedOutput[cf] = self_.bufferedOutput.get(cf, {})
+            self_.bufferedOutput[cf].update(data)
 
         self.server.pushToFlushQueue = types.MethodType(unitTestPushToFlushQueue, self.server)
 
@@ -53,7 +60,7 @@ class serverTest(unittest.TestCase):
         self.server.shutdown()
         self.server = None
 
-        self.bufferedOutput = []
+        self.bufferedOutput = dict()
 
     def test_basic_buffering(self):
         """Test that basic buffer works"""
@@ -80,13 +87,23 @@ class serverTest(unittest.TestCase):
         # Manually 'run' the server for a bit
         [self.server.doWork() for i in range(15)]
 
-        rowCount = sum([len(self.bufferedOutput[col]) for col in self.bufferedOutput])
+        # Shutdown the server
+        self.server.shutdown()
+
+        rowCount = 0
+
+        # Count the rows
+        for colFam in self.bufferedOutput:
+            for col in self.bufferedOutput[colFam].values():
+                rowCount += len(col.values())
 
         # There should be buffered output now
         self.assertTrue(rowCount > 0, "Buffered log data not dumped as expected")
 
         self.assertEqual(rowCount, 5, "The expected amount of log data was not dumped")
 
-
 if __name__ == "__main__":
-    unittest.main()
+    try:
+        unittest.main()
+    except KeyboardInterrupt, e:
+        exit(0)

@@ -8,8 +8,8 @@ class client:
     sleepTimeBetweenSends = 0.01
 
 class server:
-    intervalBetweenPolls = 0.0005
-    maxPollWait = 0.001
+    intervalBetweenPolls = 0.05
+    maxPollWait = 0.01
     host = '192.168.117.201'#socket.gethostbyname(socket.gethostname())
     port = 8080
     maxLogBufferSize = 1000
