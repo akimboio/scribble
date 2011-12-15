@@ -13,12 +13,16 @@ import random
 import pprint
 import threading
 import sys
+import signal
 
 import pycassa
 from pycassa.system_manager import *
 import thrift
 
 import scribble_config as conf
+
+def pstderr(msg):
+    sys.stderr.write("\n" + msg + "\n")
 
 class scribble_server:
     POLL_READ_FLAGS = select.POLLIN | select.POLLPRI
@@ -35,6 +39,8 @@ class scribble_server:
                  maxPollWait = conf.server.maxPollWait):
         # Do misc configuration
         self.running = True
+        self.shutdownComplete = False
+        self.shuttingdown = False
 
         # Status
         self.clientCount = 0
@@ -69,7 +75,7 @@ class scribble_server:
             self.listenSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         except socket.error:
             print "Cannot create socket"
-            exit(0)
+            sys.exit(0)
 
         self.listenSocket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.listenSocket.setblocking(0)
@@ -186,7 +192,13 @@ class scribble_server:
 #
 #               cf.insert(column,{row : line})
 #               cf.insert('lastwrite', {'time' : column })
+                try:
+                    pass
 #                cf.batch_insert(columnDictionary)
+                except pycassa.NotFoundException:
+                    pass
+                except thrift.transport.TTransport.TTransportException:
+                    pass
 
             def shutdown(self):
                 self.running = False
@@ -205,9 +217,10 @@ class scribble_server:
         columnFamilies = self.logBuffer.keys()
         for columnFamily in columnFamilies:
             # For each column family to log to
-            rowCount = sum([len(self.logBuffer[columnFamily][col])
-                            for col
-                            in self.logBuffer[columnFamily]])
+            # Count the rows
+            rowCount = 0
+            for col in self.logBuffer[columnFamily].values():
+                rowCount += len(col.values())
 
             # It's like this, see?  If we are shutting down, forget the buffering
             # and flush it all to Cassandra!
@@ -215,12 +228,8 @@ class scribble_server:
                 # Write to Cassandra
                 try:
                     self.pushToFlushQueue((columnFamily, self.logBuffer[columnFamily]))
-                except pycassa.NotFoundException:
-                    pass
-                except thrift.transport.TTransport.TTransportException:
-                    pass
                 except Exception, e:
-                    print e 
+                    pstderr(str(e))
                     pass
 
                 del self.logBuffer[columnFamily]
@@ -276,27 +285,31 @@ class scribble_server:
         """Do does any socket activity needed and then checks if the"""
         """buffered log needs to be dumped"""
         # Do any reading/processing that needs to be done
-        for res in self.poller.poll(self.maxPollWait):
+        try:
+            results = self.poller.poll(self.maxPollWait)
+        except IOError:
+            return
+
+        for res in results:
             try:
                 self.handleEvent(res)
-            except KeyboardInterrupt, e:
-                raise e
             except Exception, e:
-                print e
+                pstderr(str(e))
 
         # Dump the log data if needed
         self.flushLogBuffer()
 
     def run(self):
-        try:
-            while self.running:
-                self.doWork()
-                time.sleep(self.intervalBetweenPolls)
-        except KeyboardInterrupt:
-            return
+        while self.running:
+            self.doWork()
+            time.sleep(self.intervalBetweenPolls)
 
     def shutdown(self):
-        self.runing = False
+        # In case shutdown has been called more than once (oh signals...)
+        if self.shuttingdown or self.shutdownComplete: return
+
+        self.shuttingdown = True
+        self.running = False
 
         # Flush anything that's left...
         self.flushRemainder()
@@ -318,6 +331,9 @@ class scribble_server:
         sys.stdout.flush()
 
         self.unlabeledReport()
+
+        self.shutdownComplete = True
+        self.shuttingdown = False
     
     def report(self):
         print "Shutting down"
@@ -353,8 +369,21 @@ if __name__ == "__main__":
         srv = scribble_server(useEpoll=True,
                               intervalBetweenPolls=intervalBetweenPolls,
                               maxPollWait=maxPollWait)
+
+        def keyboardInterruptHandler(signum, frame):
+            srv.shutdown()
+
+        # Catch the interrupt signal, but Resume system calls
+        # after the signal is handled
+        signal.signal(signal.SIGINT, keyboardInterruptHandler)
+        signal.siginterrupt(signal.SIGINT, False)
+
         srv.run()
         srv.shutdown()
     except Exception, e:
         print e
         sys.exit(0)
+
+    # Wait for all shutdown to complete
+    while not srv.shutdownComplete:
+        time.sleep(0.1)

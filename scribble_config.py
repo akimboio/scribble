@@ -13,7 +13,7 @@ class server:
     host = '192.168.117.201'#socket.gethostbyname(socket.gethostname())
     port = 8080
     maxLogBufferSize = 1000
-    flushWaitTime = 1
+    flushWaitTime = 0.1
     maxConnectionBacklog = socket.SOMAXCONN
 
 class cassandra:
