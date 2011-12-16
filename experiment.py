@@ -4,26 +4,34 @@ import signal
 import time
 import sys
 import subprocess
+import datetime
 
 import scribble_server
 import hammer
 
 # Number of times to run each experiment
-sampleCount = 10
-hammerCount = 200
+sampleCount = 50
+hammerCount = 900
 
 blankReturns = 0
 totalRuns = 0
 
 try:
+    gitHash = subprocess.check_output(['git','log','-1']).split(' ')[1].split('\n')[0]
+except:
+    gitHash = 'Unknown'
+
+print "Run date: {0}\ncurrent git hash: {1}\n".format(str(datetime.datetime.today()), gitHash)
+
+try:
     for useEpoll in [False, True]:
-        for maxPollWaitInt in range(80, 0, -1):
-            for intervalBetweenPollsInt in range(80, 0, -1):
+        for maxPollWaitInt in [1]:#range(10, 0, -1):
+            for intervalBetweenPollsInt in [1]:#range(10, 0, -1):
                 # For each parameter set
                 maxPollWait = maxPollWaitInt * 0.01
                 intervalBetweenPolls = intervalBetweenPollsInt * 0.01
 
-                data = [0 for i in range(7)]
+                data = [0 for i in range(6)]
 
                 print "Experiment useEpoll: {0}, maxPollWait:{1}, intervalBetweenPolls:{2}".format(useEpoll, maxPollWait, intervalBetweenPolls)
 

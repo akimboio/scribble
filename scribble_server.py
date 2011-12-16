@@ -14,6 +14,7 @@ import pprint
 import threading
 import sys
 import signal
+import Queue
 
 import pycassa
 from pycassa.system_manager import *
@@ -61,9 +62,7 @@ class scribble_server:
         self.cassandra_host_list	= conf.cassandra.hosts
         self.cassandra_port	= conf.cassandra.server_port
 
-        # Set up threads/queues and locks for the flushing process
-        self.flushQueueLock = threading.Lock()
-        self.flushQueue = list()
+        self.flushQueue = Queue.Queue()
 
         self.spawnFlushThread()
 
@@ -122,27 +121,14 @@ class scribble_server:
     def pushToFlushQueue(self, logTuple):
         self.pushCount += 1
 
-        self.flushQueueLock.acquire()
-
-        self.flushQueue += [logTuple]
-
-        self.flushQueueLock.release()
+        self.flushQueue.put(logTuple, block=False)
 
     def popFromFlushQueue(self):
-        self.flushQueueLock.acquire()
-
-        if len(self.flushQueue) > 0:
-            self.popCount += 1
-
-            result = self.flushQueue[0]
-            # Note: it is safe to use indexes out of bounds for slice notation
-            self.flushQueue = self.flushQueue[1:]
-        else:
-            result = None
-
-        self.flushQueueLock.release()
-
-        return result
+        self.popCount += 1
+        try:
+            return self.flushQueue.get_nowait()
+        except Queue.Empty:
+            return None
 
     def spawnFlushThread(self):
         self_ = self
@@ -340,17 +326,15 @@ class scribble_server:
         print "\tServed clients: {0}".format(self.clientCount)
         print "\tStill connected: {0}".format(self.openClientCount)
         print "\tWent wrong: {0}".format(self.wentWrong)
-        print "\tColumn families not flushed: {0}".format(len(self.flushQueue))
         print "\tTotal pushes to queue: {0}".format(self.pushCount)
         print "\tTotal pops from queue: {0}".format(self.popCount)
         print "\tTotal rows flushed: {0}".format(self.rowsFlushed)
 
     def unlabeledReport(self):
-        print "{0} {1} {2} {3} {4} {5} {6}".format(
+        print "{0} {1} {2} {3} {4} {5}".format(
                 self.clientCount,
                 self.openClientCount,
                 self.wentWrong,
-                len(self.flushQueue),
                 self.pushCount,
                 self.popCount,
                 self.rowsFlushed)
