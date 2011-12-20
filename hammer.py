@@ -16,12 +16,12 @@ def hammer(thread_count):
             threading.Thread.__init__(self)
 
         def run(self):
-            message = '68.169.166.215 - - [08/Nov/2011:11:35:29 -0500] "\
-                      "GET /trends/categories?password=secret00&"\
-                      "username=joshmarlow@gmail.com HTTP/1.1" 200 6231 "\
-                      "-" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_7_2)"\
-                      "AppleWebKit/535.2 (KHTML, like Gecko)"\
-                      "Chrome/15.0.874.106 Safari/535.2'
+            message = ("68.169.166.215 - - [08/Nov/2011:11:35:29 -0500] " +
+                      "GET /trends/categories?password=secret00&" +
+                      'username=joshmarlow@gmail.com HTTP/1.1" 200 6231 ' +
+                      "-" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_7_2)" +
+                      "AppleWebKit/535.2 (KHTML, like Gecko)" +
+                      "Chrome/15.0.874.106 Safari/535.2")
 
             # We reach deeply into the scribble_client's guts and use
             # it's writeToServer method directory

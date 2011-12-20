@@ -399,8 +399,8 @@ if __name__ == "__main__":
         intervalBetweenPolls = float(sys.argv[2])
         maxPollWait = float(sys.argv[3])
     except:
-        print "usage: scribble_server.py UseEpoll"\
-              "intervalBetweenPolls maxPollWait"
+        print ("usage: scribble_server.py UseEpoll" +
+              "intervalBetweenPolls maxPollWait")
         sys.exit(0)
 
     try:
