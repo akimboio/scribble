@@ -6,8 +6,6 @@ import socket
 import select
 import time
 import cPickle
-import socket
-import os
 import uuid
 import random
 import pprint
@@ -17,13 +15,14 @@ import signal
 import Queue
 
 import pycassa
-from pycassa.system_manager import *
 import thrift
 
 import scribble_config as conf
 
+
 def pstderr(msg):
     sys.stderr.write("\n" + msg + "\n")
+
 
 class scribble_server:
     POLL_READ_FLAGS = select.POLLIN | select.POLLPRI
@@ -35,9 +34,9 @@ class scribble_server:
     READ_FLAGS = POLL_READ_FLAGS
     CLOSE_FLAGS = POLL_CLOSE_FLAGS
 
-    def __init__(self, useEpoll = False,
-                 intervalBetweenPolls = conf.server.intervalBetweenPolls,
-                 maxPollWait = conf.server.maxPollWait):
+    def __init__(self, useEpoll=False,
+                 intervalBetweenPolls=conf.server.intervalBetweenPolls,
+                 maxPollWait=conf.server.maxPollWait):
         # Do misc configuration
         self.running = True
         self.shutdownComplete = False
@@ -58,37 +57,29 @@ class scribble_server:
         self.maxPollWait = maxPollWait
         self.maxLogBufferSize = conf.server.maxLogBufferSize
 
-        self.keyspace 	= conf.cassandra.keyspace
-        self.cassandra_host_list	= conf.cassandra.hosts
-        self.cassandra_port	= conf.cassandra.server_port
+        self.keyspace = conf.cassandra.keyspace
+        self.cassandra_host_list = conf.cassandra.hosts
+        self.cassandra_port = conf.cassandra.server_port
 
         self.flushQueue = Queue.Queue()
 
-        self.spawnFlushThread()
+        self.spawn_flush_thread()
 
         # set up the listening socket
-        self.setupNetworking()
+        self.setup_networking()
 
-    def setupNetworking(self):
-        try:
-            self.listenSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        except socket.error:
-            print "Cannot create socket"
-            sys.exit(0)
-
-        self.listenSocket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self.listenSocket.setblocking(0)
-
-        self.listenSocket.bind((self.host, self.port))
-        self.listenSocket.listen(conf.server.maxConnectionBacklog)
-
-        self.listenFileNo = self.listenSocket.fileno()
-
-        # Set up the fd to socket dictionary (this is for mapping Unix-style file descriptors to Python socket objects
-        self.fdToClientTupleLookup = dict({self.listenFileNo : (self.listenSocket, '', '')})
+    def setup_networking(self):
+        # Set up the fd to socket dictionary (this is for mapping Unix-style
+        # file descriptors to Python socket objects
+        self.fdToClientTupleLookup = dict()
 
         # Used to store the data read from each client
         self.clientLogData = dict()
+
+        # Set up the log buffer
+        self.logBuffer = dict()
+
+        self_ = self
 
         # set up the poller
         if self.useEpoll:
@@ -100,37 +91,95 @@ class scribble_server:
             scribble_server.READ_FLAGS = scribble_server.POLL_READ_FLAGS
             scribble_server.CLOSE_FLAGS = scribble_server.POLL_CLOSE_FLAGS
 
-        self.poller.register(self.listenSocket, scribble_server.READ_FLAGS)
+        # set up the thread to accept connections
+        class acceptConnectionThread(threading.Thread):
+            def __init__(self):
+                threading.Thread.__init__(self)
+                self.running = True
 
-        # Set up the log buffer
-        self.logBuffer = dict()
+                try:
+                    self.listenSocket = socket.socket(socket.AF_INET,
+                                                      socket.SOCK_STREAM)
+                except socket.error:
+                    print "Cannot create socket"
+                    sys.exit(0)
 
-    def addDataToBuffer(self, data, columnFamily, connectionTime):
-        row = self.buildRow(connectionTime)
+                self.listenSocket.setsockopt(socket.SOL_SOCKET,
+                                             socket.SO_REUSEADDR, 1)
+                self.listenSocket.setblocking(1)
+
+                self.listenSocket.bind((self_.host, self_.port))
+                self.listenSocket.listen(conf.server.maxConnectionBacklog)
+
+                self.listenFileNo = self.listenSocket.fileno()
+
+            def run(self):
+                try:
+                    while self.running:
+                        client, clientAddress = self.listenSocket.accept()
+
+                        self_.clientCount += 1
+                        self_.openClientCount += 1
+
+                        client.setblocking(0)
+
+                        clientFd = client.fileno()
+
+                        self_.fdToClientTupleLookup[clientFd] =\
+                                (client, clientAddress, str(int(time.time())))
+                        self_.clientLogData[clientFd] = ''
+                        self_.poller.register(client,
+                                              scribble_server.READ_FLAGS)
+                except Exception, e:
+                    print "Exception", e, type(e).__name__
+
+            def shutdown(self):
+                self.running = False
+
+                self.listenSocket.close()
+
+                # Connect so that accept will return...
+                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                s.connect((self_.host, self_.port))
+                s.close()
+
+        self.acceptThread = acceptConnectionThread()
+        self.acceptThread.start()
+
+    def add_data_to_buffer(self, data, columnFamily, connectionTime):
+        row = self.build_row(connectionTime)
 
         # Make sure we have the needed entries in the dictionary
-        self.logBuffer[columnFamily] = self.logBuffer.get(columnFamily, {connectionTime : {} })
+        self.logBuffer[columnFamily] =\
+                self.logBuffer.get(columnFamily, {connectionTime: {}})
 
-        self.logBuffer[columnFamily][connectionTime] = self.logBuffer[columnFamily].get(connectionTime, {})
+        self.logBuffer[columnFamily][connectionTime] =\
+                self.logBuffer[columnFamily].get(connectionTime, {})
 
         self.logBuffer[columnFamily][connectionTime][row] = data
 
-    def buildRow(self, connectionTime):
-        return "{0}:{1}:{2}".format(connectionTime, socket.gethostname(), uuid.uuid1())
+    def build_row(self, connectionTime):
+        return "{0}:{1}:{2}".format(connectionTime, socket.gethostname(),
+                                    uuid.uuid1())
 
-    def pushToFlushQueue(self, logTuple):
+    def push_to_flush_queue(self, logTuple):
         self.pushCount += 1
 
         self.flushQueue.put(logTuple, block=False)
 
-    def popFromFlushQueue(self):
-        self.popCount += 1
+    def pop_from_flush_queue(self):
         try:
-            return self.flushQueue.get_nowait()
+            item = self.flushQueue.get_nowait()
+            self.popCount += 1
         except Queue.Empty:
-            return None
+            item = None
 
-    def spawnFlushThread(self):
+        return item
+
+    def finished_flush(self):
+        self.flushQueue.task_done()
+
+    def spawn_flush_thread(self):
         self_ = self
 
         class flushThread(threading.Thread):
@@ -139,30 +188,38 @@ class scribble_server:
 
                 self.running = True
 
-                self.sysmgr = SystemManager(self_.cassandra_host_list[random.randint(0,len(self_.cassandra_host_list)-1)]+':'+str(self_.cassandra_port))
+                self.sysmgr = pycassa.SystemManager(self_.cassandra_host_list[
+                    random.randint(0, len(self_.cassandra_host_list) - 1)] +\
+                            ':' + str(self_.cassandra_port))
 
-                self.cassandraPool = pycassa.ConnectionPool(keyspace = self_.keyspace,
-                                              server_list = self_.cassandra_host_list)
+                self.cassandraPool = pycassa.ConnectionPool(
+                        keyspace=self_.keyspace,
+                        server_list=self_.cassandra_host_list)
 
             def run(self):
                 # Grab something from the queue
                 while self.running:
                     # Get a tuple to write
-                    logTuple = self_.popFromFlushQueue()
+                    logTuple = self_.pop_from_flush_queue()
 
                     if logTuple:
                         (columnFamily, columnDictionary) = logTuple
 
-                        self.flushToCassandra(columnFamily, columnDictionary)
+                        self.flush_to_cassandra(columnFamily, columnDictionary)
+
+                        self_.finished_flush()
 
                     # Wait a bit
                     time.sleep(conf.server.flushWaitTime)
 
-            def flushToCassandra(self, columnFamily, columnDictionary):
-                self_.rowsFlushed += sum([len(val) for val in columnDictionary.values()])
-#                print "Inserting into column family '{0}'".format(columnFamily)
-#                pprint.pprint(columnDictionary)
-#                if columnFamily not in self.sysmgr.get_keyspace_column_families(self_.keyspace):
+            def flush_to_cassandra(self, columnFamily, columnDictionary):
+                self_.rowsFlushed += sum([len(val)
+                    for val in
+                    columnDictionary.values()])
+                print "Inserting into column family '{0}'".format(columnFamily)
+                pprint.pprint(columnDictionary)
+#                if columnFamily not in self.sysmgr.
+#                    get_keyspace_column_families(self_.keyspace):
 #                    self.sysmgr.create_column_family(
 #                                    keyspace=self_.keyspace,
 #                                    name=columnFamily,
@@ -173,7 +230,8 @@ class scribble_server:
                 # Connect to Cassandra and insert the data
 #                cf = pycassa.ColumnFamily(self.cassandraPool, columnFamily)
 #               Original code
-#               row = str(int(time.time()))+':'+gethostname() +':'+ str(uuid.uuid1()) 
+#               row = str(int(time.time())) + ':' + gethostname() + ':' +
+#                   str(uuid.uuid1())
 #               column = str(int(time.time()))
 #
 #               cf.insert(column,{row : line})
@@ -193,13 +251,13 @@ class scribble_server:
         self.flushThread = flushThread()
         self.flushThread.start()
 
-    def flushRemainder(self):
+    def flush_remainder(self):
         columnFamilies = self.logBuffer.keys()
         for columnFamily in columnFamilies:
-            self.pushToFlushQueue((columnFamily, self.logBuffer[columnFamily]))
+            self.push_to_flush_queue((columnFamily, self.logBuffer[columnFamily]))
             del self.logBuffer[columnFamily]
 
-    def flushLogBuffer(self):
+    def flush_log_buffer(self):
         columnFamilies = self.logBuffer.keys()
         for columnFamily in columnFamilies:
             # For each column family to log to
@@ -208,66 +266,55 @@ class scribble_server:
             for col in self.logBuffer[columnFamily].values():
                 rowCount += len(col.values())
 
-            # It's like this, see?  If we are shutting down, forget the buffering
+            # It's like this, see?  If we are shutting down,
+            # forget the buffering
             # and flush it all to Cassandra!
             if (rowCount >= self.maxLogBufferSize) or not self.running:
                 # Write to Cassandra
                 try:
-                    self.pushToFlushQueue((columnFamily, self.logBuffer[columnFamily]))
+                    self.push_to_flush_queue((columnFamily,
+                                           self.logBuffer[columnFamily]))
                 except Exception, e:
                     pstderr(str(e))
                     pass
 
                 del self.logBuffer[columnFamily]
 
-    def handleEvent(self, res):
+    def handle_event(self, res):
         fd, eventType = res
 
-        if (fd == self.listenFileNo) and (eventType & scribble_server.READ_FLAGS):
-            # New incomming connection
-            client, clientAddress = self.listenSocket.accept()
+        # New data on an existing connection
+        if eventType & scribble_server.READ_FLAGS:
+            # We have data to read
+            (client, address, connectionTime) = self.fdToClientTupleLookup[fd]
+            data = client.recv(1024)
 
-            self.clientCount += 1
-            self.openClientCount += 1
+            if '' == data:
+                # Connection closed; clean up this socket and record the data
+                self.openClientCount -= 1
 
-            client.setblocking(0)
+                messageComponents = cPickle.loads(self.clientLogData[fd])
 
-            clientFd = client.fileno()
-
-            self.fdToClientTupleLookup[clientFd] = (client, clientAddress, str(int(time.time())))
-            self.clientLogData[clientFd] = ''
-            self.poller.register(client, scribble_server.READ_FLAGS)
-        else:
-            # New data on an existing connection
-            if eventType & scribble_server.READ_FLAGS:
-                # We have data to read
-                (client, address, connectionTime) = self.fdToClientTupleLookup[fd]
-                data = client.recv(1024)
-
-                if '' == data:
-                    # Connection closed; clean up this socket and record the data
-                    self.openClientCount -= 1
-
-                    messageComponents = cPickle.loads(self.clientLogData[fd])
-
-                    self.addDataToBuffer(messageComponents['log'], messageComponents['cf'], connectionTime)
-
-                    self.poller.unregister(client)
-                    client.close()
-                    del self.clientLogData[fd]
-                    del self.fdToClientTupleLookup[fd]
-                else:
-                    self.clientLogData[fd] += data
-            elif eventType & scribble_server.CLOSE_FLAGS:
-                # Something went wrong
-                (client, address, connectionTime) = self.fdToClientTupleLookup[fd]
+                self.add_data_to_buffer(messageComponents['log'],
+                                     messageComponents['cf'],
+                                     connectionTime)
 
                 self.poller.unregister(client)
                 client.close()
+                del self.clientLogData[fd]
+                del self.fdToClientTupleLookup[fd]
+            else:
+                self.clientLogData[fd] += data
+        elif eventType & scribble_server.CLOSE_FLAGS:
+            # Something went wrong
+            (client, address, connectionTime) = self.fdToClientTupleLookup[fd]
 
-                self.wentWrong += 1
+            self.poller.unregister(client)
+            client.close()
 
-    def doWork(self):
+            self.wentWrong += 1
+
+    def do_work(self):
         """Do does any socket activity needed and then checks if the"""
         """buffered log needs to be dumped"""
         # Do any reading/processing that needs to be done
@@ -278,59 +325,65 @@ class scribble_server:
 
         for res in results:
             try:
-                self.handleEvent(res)
+                self.handle_event(res)
             except Exception, e:
                 pstderr(str(e))
 
         # Dump the log data if needed
-        self.flushLogBuffer()
+        self.flush_log_buffer()
 
     def run(self):
         while self.running:
-            self.doWork()
+            self.do_work()
             time.sleep(self.intervalBetweenPolls)
 
     def shutdown(self):
         # In case shutdown has been called more than once (oh signals...)
-        if self.shuttingdown or self.shutdownComplete: return
+        if self.shuttingdown or self.shutdownComplete:
+            return
 
         self.shuttingdown = True
         self.running = False
 
-        # Flush anything that's left...
-        self.flushRemainder()
+        # Shut down the accepting thread
+        self.acceptThread.shutdown()
+        self.acceptThread.join()
 
-        # Give the flush thread time to try to clear things out...
-        time.sleep(3)
+        # Do one more poll to clean out anything lingering
+        self.do_work()
+
+        # Flush anything that's left...
+        self.flush_remainder()
 
         [self.poller.unregister(client) for client in
-            [clientTuple[0] for clientTuple in self.fdToClientTupleLookup.values()]]
-
-        self.listenSocket.close()
+            [clientTuple[0]
+                for clientTuple
+                in self.fdToClientTupleLookup.values()]]
 
         self.fdToClientTupleLookup.clear()
         self.clientLogData.clear()
+
+        # Wait on the flush thread to clear things out of the queue
+        self.flushQueue.join()
 
         # Shut down the flush thread
         self.flushThread.shutdown()
         self.flushThread.join()
         sys.stdout.flush()
 
-        self.unlabeledReport()
-
         self.shutdownComplete = True
         self.shuttingdown = False
-    
+
     def report(self):
-        print "Shutting down"
+        print "Server report"
         print "\tServed clients: {0}".format(self.clientCount)
         print "\tStill connected: {0}".format(self.openClientCount)
         print "\tWent wrong: {0}".format(self.wentWrong)
-        print "\tTotal pushes to queue: {0}".format(self.pushCount)
-        print "\tTotal pops from queue: {0}".format(self.popCount)
+        print "\tTotal pushes to flush queue: {0}".format(self.pushCount)
+        print "\tTotal pops from flush queue: {0}".format(self.popCount)
         print "\tTotal rows flushed: {0}".format(self.rowsFlushed)
 
-    def unlabeledReport(self):
+    def unlabeled_report(self):
         print "{0} {1} {2} {3} {4} {5}".format(
                 self.clientCount,
                 self.openClientCount,
@@ -346,7 +399,8 @@ if __name__ == "__main__":
         intervalBetweenPolls = float(sys.argv[2])
         maxPollWait = float(sys.argv[3])
     except:
-        print "usage: scribble_server.py UseEpoll intervalBetweenPolls maxPollWait"
+        print "usage: scribble_server.py UseEpoll"\
+              "intervalBetweenPolls maxPollWait"
         sys.exit(0)
 
     try:
@@ -354,12 +408,13 @@ if __name__ == "__main__":
                               intervalBetweenPolls=intervalBetweenPolls,
                               maxPollWait=maxPollWait)
 
-        def keyboardInterruptHandler(signum, frame):
+        def keyboard_interrupt_handler(signum, frame):
+            pstderr("Shutting down")
             srv.shutdown()
 
         # Catch the interrupt signal, but Resume system calls
         # after the signal is handled
-        signal.signal(signal.SIGINT, keyboardInterruptHandler)
+        signal.signal(signal.SIGINT, keyboard_interrupt_handler)
         signal.siginterrupt(signal.SIGINT, False)
 
         srv.run()
@@ -367,6 +422,8 @@ if __name__ == "__main__":
     except Exception, e:
         print e
         sys.exit(0)
+    finally:
+        srv.report()
 
     # Wait for all shutdown to complete
     while not srv.shutdownComplete:
