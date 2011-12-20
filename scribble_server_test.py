@@ -1,22 +1,20 @@
 #!/usr/bin/env python
 # Created: 9:15 AM, December 12, 2011
-# Note: the sever will not shutdown and report normally in unit tests, because the flushing method is being overridden
+# Note: the sever will *NOT* shutdown and report normally in unit tests,
+# because the flushing method is being overridden
 
 import unittest
 import socket
 import time
 import types
 import cPickle
-import threading
-import pprint
 
 import scribble_config as conf
 import scribble_server
-import scribble_client
-import hammer
+
 
 class serverTest(unittest.TestCase):
-    def logToServer(self, logMessage):
+    def log_to_server(self, logMessage):
         """Establish a connection to the server and write this message"""
 
         # Connect to the server
@@ -48,13 +46,14 @@ class serverTest(unittest.TestCase):
         # this nifty trick.
         self_ = self
 
-        def unitTestPushToFlushQueue(self, logTuple):
+        def unit_test_push_to_flush_queue(self, logTuple):
             (cf, data) = logTuple
 
             self_.bufferedOutput[cf] = self_.bufferedOutput.get(cf, {})
             self_.bufferedOutput[cf].update(data)
 
-        self.server.pushToFlushQueue = types.MethodType(unitTestPushToFlushQueue, self.server)
+        self.server.push_to_flush_queue =\
+                types.MethodType(unit_test_push_to_flush_queue, self.server)
 
     def tearDown(self):
         self.server.shutdown()
@@ -73,19 +72,20 @@ class serverTest(unittest.TestCase):
         for idx in range(0, 4):
             data = cPickle.dumps({"log": baseLogMessage.format(idx),
                                   "cf": "Users "})
-            self.logToServer(data)
+            self.log_to_server(data)
 
-            self.server.doWork()
+            self.server.do_work()
 
         # There should be no buffered output yet
-        self.assertEqual(0, len(self.bufferedOutput), "Premature dumping of log buffer")
+        self.assertEqual(0, len(self.bufferedOutput),
+                            "Premature dumping of log buffer")
 
         data = cPickle.dumps({"log": baseLogMessage.format(4),
                               "cf": "Users "})
-        self.logToServer(data)
+        self.log_to_server(data)
 
         # Manually 'run' the server for a bit
-        [self.server.doWork() for i in range(15)]
+        [self.server.do_work() for i in range(15)]
 
         # Shutdown the server
         self.server.shutdown()
@@ -98,9 +98,12 @@ class serverTest(unittest.TestCase):
                 rowCount += len(col.values())
 
         # There should be buffered output now
-        self.assertTrue(rowCount > 0, "Buffered log data not dumped as expected")
+        self.assertTrue(rowCount > 0,
+                        "Buffered log data not dumped as expected")
 
-        self.assertEqual(rowCount, 5, "The expected amount of log data was not dumped")
+        self.assertEqual(rowCount, 5,
+                         "The expected amount of log data was not dumped")
+
 
 if __name__ == "__main__":
     try:

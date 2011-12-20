@@ -8,12 +8,12 @@ class client:
     sleepTimeBetweenSends = 0.01
 
 class server:
-    intervalBetweenPolls = 0.05
+    intervalBetweenPolls = 0.01
     maxPollWait = 0.01
     host = '192.168.117.201'#socket.gethostbyname(socket.gethostname())
     port = 8080
     maxLogBufferSize = 1000
-    flushWaitTime = 0.1
+    flushWaitTime = 1
     maxConnectionBacklog = socket.SOMAXCONN
 
 class cassandra:
