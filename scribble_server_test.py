@@ -4,35 +4,19 @@
 # because the flushing method is being overridden
 
 import unittest
-import socket
-import time
 import types
-import cPickle
 
-import scribble_config as conf
 import scribble_server
+import scribble_client
 
 
 class serverTest(unittest.TestCase):
-    def log_to_server(self, logMessage):
-        """Establish a connection to the server and write this message"""
-
-        # Connect to the server
-        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.connect((self.server.host, self.server.port))
-
-        data = logMessage
-
-        while len(data) > 0:
-            bytesSent = s.send(data)
-
-            data = data[bytesSent:]
-
-            time.sleep(conf.client.sleepTimeBetweenSends)
-
-        s.close()
+    """Test out the scribble server"""
 
     def setUp(self):
+        """Do basic set up of the server.  Override the push_to_flush"""
+        """method on the server so that we can double check it's flushing"""
+        """behavior"""
         self.server = scribble_server.scribble_server()
 
         # Override the buffer flushing mechanism so we can observ
@@ -70,9 +54,8 @@ class serverTest(unittest.TestCase):
         self.server.maxLogBufferSize = 5
 
         for idx in range(0, 4):
-            data = cPickle.dumps({"log": baseLogMessage.format(idx),
-                                  "cf": "Users "})
-            self.log_to_server(data)
+            scribble_client.write_to_server(baseLogMessage.format(idx),
+                                            "Users")
 
             self.server.do_work()
 
@@ -80,9 +63,7 @@ class serverTest(unittest.TestCase):
         self.assertEqual(0, len(self.bufferedOutput),
                             "Premature dumping of log buffer")
 
-        data = cPickle.dumps({"log": baseLogMessage.format(4),
-                              "cf": "Users "})
-        self.log_to_server(data)
+        scribble_client.write_to_server(baseLogMessage.format(4), "Users")
 
         # Manually 'run' the server for a bit
         [self.server.do_work() for i in range(15)]

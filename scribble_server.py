@@ -5,8 +5,7 @@
 import socket
 import select
 import time
-import cPickle
-import uuid
+import json
 import random
 import pprint
 import threading
@@ -21,10 +20,17 @@ import scribble_config as conf
 
 
 def pstderr(msg):
+    """Print to stderr.  Simple helper function to keep from"""
+    """cluttering stdout"""
     sys.stderr.write("\n" + msg + "\n")
 
 
 class scribble_server:
+    """This is the scribble server.  It functions as a long running"""
+    """process that scribble clients can write data to.  Periodically"""
+    """the server writes it's data to Cassandra.  At shutdown, it"""
+    """takes a few seconds to write anything remaning in it's buffers"""
+    """to Cassandra."""
     POLL_READ_FLAGS = select.POLLIN | select.POLLPRI
     POLL_CLOSE_FLAGS = select.POLLERR | select.POLLHUP | select.POLLNVAL
 
@@ -37,12 +43,12 @@ class scribble_server:
     def __init__(self, useEpoll=False,
                  intervalBetweenPolls=conf.server.intervalBetweenPolls,
                  maxPollWait=conf.server.maxPollWait):
-        # Do misc configuration
+        # The state of the server and the step in the shutdown process
         self.running = True
         self.shutdownComplete = False
         self.shuttingdown = False
 
-        # Status
+        # Stats for generating the report
         self.clientCount = 0
         self.openClientCount = 0
         self.wentWrong = 0
@@ -50,6 +56,7 @@ class scribble_server:
         self.popCount = 0
         self.rowsFlushed = 0
 
+        # Do misc configuration
         self.useEpoll = useEpoll
         self.host = conf.server.host
         self.port = conf.server.port
@@ -69,6 +76,8 @@ class scribble_server:
         self.setup_networking()
 
     def setup_networking(self):
+        """Create the polling object, and spawn the listening/accepting"""
+        """thread"""
         # Set up the fd to socket dictionary (this is for mapping Unix-style
         # file descriptors to Python socket objects
         self.fdToClientTupleLookup = dict()
@@ -93,6 +102,8 @@ class scribble_server:
 
         # set up the thread to accept connections
         class acceptConnectionThread(threading.Thread):
+            """Embedded class that implements the server's socket"""
+            """listening and accepting thread"""
             def __init__(self):
                 threading.Thread.__init__(self)
                 self.running = True
@@ -114,6 +125,7 @@ class scribble_server:
                 self.listenFileNo = self.listenSocket.fileno()
 
             def run(self):
+                """Begin listening and accepting socket connections"""
                 try:
                     while self.running:
                         client, clientAddress = self.listenSocket.accept()
@@ -133,7 +145,10 @@ class scribble_server:
                 except Exception, e:
                     print "Exception", e, type(e).__name__
 
-            def shutdown(self):
+            def shutdown_accept_thread(self):
+                """Shutdown (gracefully) the accepting thread.  To do this,"""
+                """we make a connection to the thread and then close it to"""
+                """trigger the accept call"""
                 self.running = False
 
                 self.listenSocket.close()
@@ -146,28 +161,51 @@ class scribble_server:
         self.acceptThread = acceptConnectionThread()
         self.acceptThread.start()
 
-    def add_data_to_buffer(self, data, columnFamily, connectionTime):
-        row = self.build_row(connectionTime)
+    def add_data_to_buffer(self, data, connectionTime, superColumn=False):
+        """Add this write job to the log buffer so that it may be flushed in"""
+        """the future."""
+        keyspace = data["keyspace"]
+        columnFamily = data["columnFamily"]
+        rowKey = data["rowKey"]
+        if superColumn:
+            superColumnName = data["superColumnName"]
+        columnName = data["columnName"]
+        columnValue = data["value"]
 
         # Make sure we have the needed entries in the dictionary
-        self.logBuffer[columnFamily] =\
-                self.logBuffer.get(columnFamily, {connectionTime: {}})
+        def make_key_if_needed(dict_, key):
+            dict_[key] = dict_.get(key, {})
 
-        self.logBuffer[columnFamily][connectionTime] =\
-                self.logBuffer[columnFamily].get(connectionTime, {})
+        make_key_if_needed(self.logBuffer, keyspace)
+        make_key_if_needed(self.logBuffer[keyspace], columnFamily)
+        make_key_if_needed(self.logBuffer[keyspace][columnFamily], rowKey)
 
-        self.logBuffer[columnFamily][connectionTime][row] = data
+        if superColumn:
+            make_key_if_needed(self.logBuffer[keyspace][columnFamily][rowKey],
+                            superColumnName)
+            make_key_if_needed(self.logBuffer[keyspace][columnFamily][rowKey]\
+                            [superColumnName],
+                            columnName)
 
-    def build_row(self, connectionTime):
-        return "{0}:{1}:{2}".format(connectionTime, socket.gethostname(),
-                                    uuid.uuid1())
+            self.logBuffer[keyspace][columnFamily][rowKey][superColumnName]\
+                            [columnName] = columnValue
+        else:
+            make_key_if_needed(self.logBuffer[keyspace][columnFamily][rowKey],
+                            columnName)
+
+            self.logBuffer[keyspace][columnFamily][rowKey][columnName] =\
+                            columnValue
 
     def push_to_flush_queue(self, logTuple):
+        """Push this write job to the flush queue so that it will be"""
+        """written to Cassandra """
         self.pushCount += 1
 
         self.flushQueue.put(logTuple, block=False)
 
     def pop_from_flush_queue(self):
+        """Pop a write job from the flush queue so that we may"""
+        """write it to Cassandra"""
         try:
             item = self.flushQueue.get_nowait()
             self.popCount += 1
@@ -177,12 +215,17 @@ class scribble_server:
         return item
 
     def finished_flush(self):
+        """Acknowledges that a flush is complete."""
         self.flushQueue.task_done()
 
     def spawn_flush_thread(self):
+        """Spawn a thread that pops write jobs off of the flush queue"""
+        """and writes the to Cassandra"""
         self_ = self
 
         class flushThread(threading.Thread):
+            """Implements the thread that repeatedly pulls write jobs from"""
+            """the flush queue and flushes them to cassandra"""
             def __init__(self):
                 threading.Thread.__init__(self)
 
@@ -197,9 +240,10 @@ class scribble_server:
                         server_list=self_.cassandra_host_list)
 
             def run(self):
-                # Grab something from the queue
+                """Loop as long as the server is running and grab write"""
+                """jobs and flush them to cassandra"""
                 while self.running:
-                    # Get a tuple to write
+                    # Get a write job
                     logTuple = self_.pop_from_flush_queue()
 
                     if logTuple:
@@ -213,6 +257,7 @@ class scribble_server:
                     time.sleep(conf.server.flushWaitTime)
 
             def flush_to_cassandra(self, columnFamily, columnDictionary):
+                """Write this data to Cassandr nowa"""
                 self_.rowsFlushed += sum([len(val)
                     for val in
                     columnDictionary.values()])
@@ -244,7 +289,8 @@ class scribble_server:
                 except thrift.transport.TTransport.TTransportException:
                     pass
 
-            def shutdown(self):
+            def shutdown_flush_thread(self):
+                """Shutdown the flush thread"""
                 self.running = False
 
         # Start up the flush thread
@@ -252,12 +298,19 @@ class scribble_server:
         self.flushThread.start()
 
     def flush_remainder(self):
-        columnFamilies = self.logBuffer.keys()
-        for columnFamily in columnFamilies:
-            self.push_to_flush_queue((columnFamily, self.logBuffer[columnFamily]))
-            del self.logBuffer[columnFamily]
+        """Flush the remaining data in the buffer to Casssandra"""
+        keyspaces = self.logBuffer.keys()
+
+        for keyspace in keyspaces:
+            # Flush each keyspace
+            columnFamilies = self.logBuffer[keyspace].keys()
+            for columnFamily in columnFamilies:
+                self.push_to_flush_queue((columnFamily,
+                    self.logBuffer[columnFamily]))
+                del self.logBuffer[columnFamily]
 
     def flush_log_buffer(self):
+        """Look at all of the columns and flush any that have a lot of data"""
         columnFamilies = self.logBuffer.keys()
         for columnFamily in columnFamilies:
             # For each column family to log to
@@ -281,6 +334,7 @@ class scribble_server:
                 del self.logBuffer[columnFamily]
 
     def handle_event(self, res):
+        """Something has happened on this socket; read from it or close it"""
         fd, eventType = res
 
         # New data on an existing connection
@@ -293,11 +347,10 @@ class scribble_server:
                 # Connection closed; clean up this socket and record the data
                 self.openClientCount -= 1
 
-                messageComponents = cPickle.loads(self.clientLogData[fd])
+                if len(self.clientLogData[fd]) > 0:
+                    message = json.loads(self.clientLogData[fd])
 
-                self.add_data_to_buffer(messageComponents['log'],
-                                     messageComponents['cf'],
-                                     connectionTime)
+                    self.add_data_to_buffer(message, connectionTime)
 
                 self.poller.unregister(client)
                 client.close()
@@ -315,7 +368,7 @@ class scribble_server:
             self.wentWrong += 1
 
     def do_work(self):
-        """Do does any socket activity needed and then checks if the"""
+        """Do any socket activity needed and then checks if the"""
         """buffered log needs to be dumped"""
         # Do any reading/processing that needs to be done
         try:
@@ -333,11 +386,14 @@ class scribble_server:
         self.flush_log_buffer()
 
     def run(self):
+        """Go through the motions of running the server, reading and"""
+        """flushing data as appropriate"""
         while self.running:
             self.do_work()
             time.sleep(self.intervalBetweenPolls)
 
     def shutdown(self):
+        """Shut down the server, writing any remaining log data to Cassandra"""
         # In case shutdown has been called more than once (oh signals...)
         if self.shuttingdown or self.shutdownComplete:
             return
@@ -346,7 +402,7 @@ class scribble_server:
         self.running = False
 
         # Shut down the accepting thread
-        self.acceptThread.shutdown()
+        self.acceptThread.shutdown_accept_thread()
         self.acceptThread.join()
 
         # Do one more poll to clean out anything lingering
@@ -367,7 +423,7 @@ class scribble_server:
         self.flushQueue.join()
 
         # Shut down the flush thread
-        self.flushThread.shutdown()
+        self.flushThread.shutdown_flush_thread()
         self.flushThread.join()
         sys.stdout.flush()
 
@@ -375,6 +431,7 @@ class scribble_server:
         self.shuttingdown = False
 
     def report(self):
+        """Print a human readable report of various server stats"""
         print "Server report"
         print "\tServed clients: {0}".format(self.clientCount)
         print "\tStill connected: {0}".format(self.openClientCount)
@@ -384,6 +441,9 @@ class scribble_server:
         print "\tTotal rows flushed: {0}".format(self.rowsFlushed)
 
     def unlabeled_report(self):
+        """Print an unlabled (ie, not human readable) report of various"""
+        """server stats.  This output is easier for machines to parse"""
+        """than the output of report"""
         print "{0} {1} {2} {3} {4} {5}".format(
                 self.clientCount,
                 self.openClientCount,
@@ -408,12 +468,12 @@ if __name__ == "__main__":
                               intervalBetweenPolls=intervalBetweenPolls,
                               maxPollWait=maxPollWait)
 
+        # Catch the interrupt signal, but resume system calls
+        # after the signal is handled
         def keyboard_interrupt_handler(signum, frame):
             pstderr("Shutting down")
             srv.shutdown()
 
-        # Catch the interrupt signal, but Resume system calls
-        # after the signal is handled
         signal.signal(signal.SIGINT, keyboard_interrupt_handler)
         signal.siginterrupt(signal.SIGINT, False)
 

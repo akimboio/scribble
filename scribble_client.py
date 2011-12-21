@@ -18,35 +18,35 @@ usage:
                 probably corresponding to vhost
 """
 
-import cPickle
 import sys
 import socket
 import time
+import uuid
 
-import scribble_config as conf
+import scribble_lib
 
 
 def write_to_server(logMessage, columnFamily):
-    data = cPickle.dumps({'log': logMessage, 'cf': columnFamily})
+    """Log the logMessage to the server and store it under the specified"""
+    """column family"""
+    def build_row(connectionTime):
+        """Generate a unique rowID for this particular log message"""
+        return "{0}:{1}:{2}".format(connectionTime, socket.gethostname(),
+                                    uuid.uuid1())
 
-    try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.connect((conf.server.host, conf.server.port))
+    connectionTime = time.time()
 
-        # Loop until we've sent all of the data
-        while len(data) > 0:
-            bytesSent = s.send(data)
+    dataDictionary = {'keyspace': scribble_lib.conf.cassandra.keyspace,
+                       'columnFamily': columnFamily,
+                       'rowKey': connectionTime,
+                       'columnName': build_row(connectionTime),
+                       'value': logMessage}
 
-            data = data[bytesSent:]
-
-            time.sleep(conf.client.sleepTimeBetweenSends)
-
-        s.close()
-    except:
-        pass
+    scribble_lib.write_data(dataDictionary)
 
 
 def run(columnFamily):
+    """Loop accepting input from stdin and writing it to the log server"""
     try:
         while True:
             logMessage = sys.stdin.readline().rstrip()
@@ -61,7 +61,5 @@ if __name__ == "__main__":
         columnFamily = sys.argv[1]
     else:
         sys.exit("You must supply a column family")
-
-    print "Using column family '{0}'".format(columnFamily)
 
     run(columnFamily)
