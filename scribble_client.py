@@ -34,7 +34,7 @@ def write_to_server(logMessage, columnFamily):
         return "{0}:{1}:{2}".format(connectionTime, socket.gethostname(),
                                     uuid.uuid1())
 
-    connectionTime = time.time()
+    connectionTime = str(time.time())
 
     dataDictionary = {'keyspace': scribble_lib.conf.cassandra.keyspace,
                        'columnFamily': columnFamily,
