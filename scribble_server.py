@@ -64,7 +64,6 @@ class scribble_server:
         self.maxPollWait = maxPollWait
         self.maxLogBufferSize = conf.server.maxLogBufferSize
 
-        self.keyspace = conf.cassandra.keyspace
         self.cassandra_host_list = conf.cassandra.hosts
         self.cassandra_port = conf.cassandra.server_port
 
@@ -232,13 +231,9 @@ class scribble_server:
 
                 self.running = True
 
-                self.sysmgr = pycassa.SystemManager(self_.cassandra_host_list[
-                    random.randint(0, len(self_.cassandra_host_list) - 1)] +\
-                            ':' + str(self_.cassandra_port))
-
-                self.cassandraPool = pycassa.ConnectionPool(
-                        keyspace=self_.keyspace,
-                        server_list=self_.cassandra_host_list)
+                self.sysmgr = pycassa.SystemManager("{0}:{1}".\
+                        format(random.choice(self_.cassandra_host_list),
+                               self_.cassandra_port))
 
             def run(self):
                 """Loop as long as the server is running and grab write"""
@@ -248,30 +243,33 @@ class scribble_server:
                     logTuple = self_.pop_from_flush_queue()
 
                     if logTuple:
-                        (columnFamily, columnDictionary) = logTuple
+                        (keyspace, columnFamily, columnDictionary) = logTuple
 
-                        self.flush_to_cassandra(columnFamily, columnDictionary)
+                        self.flush_to_cassandra(keyspace, columnFamily, columnDictionary)
 
                         self_.finished_flush()
 
-            def flush_to_cassandra(self, columnFamily, columnDictionary):
-                """Write this data to Cassandr nowa"""
+            def flush_to_cassandra(self, keyspace, columnFamily, columnDictionary):
+                """Write this data to Cassandr now"""
+                cassandraPool = pycassa.ConnectionPool(
+                        keyspace=keyspace,
+                        server_list=self_.cassandra_host_list)
+
                 self_.rowsFlushed += sum([len(val)
                     for val in
                     columnDictionary.values()])
-#                print "Inserting into column family '{0}'".format(columnFamily)
-#                pprint.pprint(columnDictionary)
-#                if columnFamily not in self.sysmgr.
-#                    get_keyspace_column_families(self_.keyspace):
-#                    self.sysmgr.create_column_family(
-#                                    keyspace=self_.keyspace,
-#                                    name=columnFamily,
-#                                    comparator_type=UTF8_TYPE,
-#                                    key_validation_class=UTF8_TYPE,
-#                                    key_alias='data')
+
+                if columnFamily not in self.sysmgr.\
+                    get_keyspace_column_families(keyspace):
+                    self.sysmgr.create_column_family(
+                                    keyspace=keyspace,
+                                    name=columnFamily,
+                                    comparator_type=pycassa.UTF8_TYPE,
+                                    key_validation_class=pycassa.UTF8_TYPE,
+                                    key_alias='data')
 
                 # Connect to Cassandra and insert the data
-#                cf = pycassa.ColumnFamily(self.cassandraPool, columnFamily)
+                cf = pycassa.ColumnFamily(cassandraPool, columnFamily)
 #               Original code
 #               row = str(int(time.time())) + ':' + gethostname() + ':' +
 #                   str(uuid.uuid1())
@@ -280,8 +278,8 @@ class scribble_server:
 #               cf.insert(column,{row : line})
 #               cf.insert('lastwrite', {'time' : column })
                 try:
-                    pass
-#                cf.batch_insert(columnDictionary)
+                    pstderr("Batch inserting into keyspace: '{0} 'and column family: '{1}'".format(keyspace, columnFamily))
+                    cf.batch_insert(columnDictionary)
                 except pycassa.NotFoundException:
                     pass
                 except thrift.transport.TTransport.TTransportException:
@@ -303,33 +301,38 @@ class scribble_server:
             # Flush each keyspace
             columnFamilies = self.logBuffer[keyspace].keys()
             for columnFamily in columnFamilies:
-                self.push_to_flush_queue((columnFamily,
-                    self.logBuffer[columnFamily]))
-                del self.logBuffer[columnFamily]
+                self.push_to_flush_queue((keyspace, columnFamily,
+                    self.logBuffer[keyspace][columnFamily]))
+                del self.logBuffer[keyspace][columnFamily]
 
     def flush_log_buffer(self):
         """Look at all of the columns and flush any that have a lot of data"""
-        columnFamilies = self.logBuffer.keys()
-        for columnFamily in columnFamilies:
-            # For each column family to log to
-            # Count the rows
-            rowCount = 0
-            for col in self.logBuffer[columnFamily].values():
-                rowCount += len(col.values())
+        keyspaces = self.logBuffer.keys()
 
-            # It's like this, see?  If we are shutting down,
-            # forget the buffering
-            # and flush it all to Cassandra!
-            if (rowCount >= self.maxLogBufferSize) or not self.running:
-                # Write to Cassandra
-                try:
-                    self.push_to_flush_queue((columnFamily,
-                                           self.logBuffer[columnFamily]))
-                except Exception, e:
-                    pstderr(str(e))
-                    pass
+        for keyspace in keyspaces:
+            # For each keyspace to log to
+            columnFamilies = self.logBuffer[keyspace].keys()
 
-                del self.logBuffer[columnFamily]
+            for columnFamily in columnFamilies:
+                # For each column family to log to
+                # Count the rows
+                rowCount = 0
+                for col in self.logBuffer[keyspace][columnFamily].values():
+                    rowCount += len(col.values())
+
+                # It's like this, see?  If we are shutting down,
+                # forget the buffering
+                # and flush it all to Cassandra!
+                if (rowCount >= self.maxLogBufferSize) or not self.running:
+                    # Write to Cassandra
+                    try:
+                        self.push_to_flush_queue((keyspace, columnFamily,
+                                               self.logBuffer[keyspace][columnFamily]))
+                    except Exception, e:
+                        pstderr(str(e))
+                        pass
+
+                    del self.logBuffer[keyspace][columnFamily]
 
     def handle_event(self, res):
         """Something has happened on this socket; read from it or close it"""
