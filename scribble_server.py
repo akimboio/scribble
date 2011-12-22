@@ -208,7 +208,7 @@ class scribble_server:
         """Pop a write job from the flush queue so that we may"""
         """write it to Cassandra"""
         try:
-            item = self.flushQueue.get_nowait()
+            item = self.flushQueue.get(block=True, timeout=0.5)
             self.popCount += 1
         except Queue.Empty:
             item = None
@@ -253,9 +253,6 @@ class scribble_server:
                         self.flush_to_cassandra(columnFamily, columnDictionary)
 
                         self_.finished_flush()
-
-                    # Wait a bit
-                    time.sleep(conf.server.flushWaitTime)
 
             def flush_to_cassandra(self, columnFamily, columnDictionary):
                 """Write this data to Cassandr nowa"""
