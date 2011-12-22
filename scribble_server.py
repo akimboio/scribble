@@ -130,18 +130,19 @@ class scribble_server:
                     while self.running:
                         client, clientAddress = self.listenSocket.accept()
 
-                        self_.clientCount += 1
-                        self_.openClientCount += 1
+                        if self.running:
+                            self_.clientCount += 1
+                            self_.openClientCount += 1
 
-                        client.setblocking(0)
+                            client.setblocking(0)
 
-                        clientFd = client.fileno()
+                            clientFd = client.fileno()
 
-                        self_.fdToClientTupleLookup[clientFd] =\
-                                (client, clientAddress, str(int(time.time())))
-                        self_.clientLogData[clientFd] = ''
-                        self_.poller.register(client,
-                                              scribble_server.READ_FLAGS)
+                            self_.fdToClientTupleLookup[clientFd] =\
+                                    (client, clientAddress, str(int(time.time())))
+                            self_.clientLogData[clientFd] = ''
+                            self_.poller.register(client,
+                                                  scribble_server.READ_FLAGS)
                 except Exception, e:
                     print "Exception", e, type(e).__name__
 
@@ -261,8 +262,8 @@ class scribble_server:
                 self_.rowsFlushed += sum([len(val)
                     for val in
                     columnDictionary.values()])
-                print "Inserting into column family '{0}'".format(columnFamily)
-                pprint.pprint(columnDictionary)
+#                print "Inserting into column family '{0}'".format(columnFamily)
+#                pprint.pprint(columnDictionary)
 #                if columnFamily not in self.sysmgr.
 #                    get_keyspace_column_families(self_.keyspace):
 #                    self.sysmgr.create_column_family(
@@ -345,7 +346,8 @@ class scribble_server:
 
             if '' == data:
                 # Connection closed; clean up this socket and record the data
-                self.openClientCount -= 1
+                if self.running:
+                    self.openClientCount -= 1
 
                 if len(self.clientLogData[fd]) > 0:
                     message = json.loads(self.clientLogData[fd])
@@ -471,7 +473,7 @@ if __name__ == "__main__":
         # Catch the interrupt signal, but resume system calls
         # after the signal is handled
         def keyboard_interrupt_handler(signum, frame):
-            pstderr("Shutting down")
+#            pstderr("Shutting down")
             srv.shutdown()
 
         signal.signal(signal.SIGINT, keyboard_interrupt_handler)
@@ -483,7 +485,8 @@ if __name__ == "__main__":
         print e
         sys.exit(0)
     finally:
-        srv.report()
+        srv.unlabeled_report()
+#        srv.report()
 
     # Wait for all shutdown to complete
     while not srv.shutdownComplete:
