@@ -155,7 +155,12 @@ class scribble_server:
 
                 # Connect so that accept will return...
                 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                s.connect((self_.host, self_.port))
+
+                try:
+                    s.connect((self_.host, self_.port))
+                except:
+                    pass
+
                 s.close()
 
         self.acceptThread = acceptConnectionThread()
@@ -432,6 +437,16 @@ class scribble_server:
         self.shutdownComplete = True
         self.shuttingdown = False
 
+    def force_shutdown(self):
+        self.shutdownComplete = True
+        self.shuttingdown = False
+
+        self.flushThread.shutdown_flush_thread()
+        self.acceptThread.shutdown_accept_thread()
+
+    def pending_write_jobs(self):
+        return self.pushCount - self.popCount
+
     def report(self):
         """Print a human readable report of various server stats"""
         print "Server report"
@@ -473,7 +488,20 @@ if __name__ == "__main__":
         # Catch the interrupt signal, but resume system calls
         # after the signal is handled
         def keyboard_interrupt_handler(signum, frame):
-#            pstderr("Shutting down")
+            pstderr("Shutting down...")
+            pstderr("Flushing {0} write jobs to database...".format(srv.pending_write_jobs()))
+            # It's *possible* that the server could hang while being
+            # shutdown; in that case, we want to be able to forcefully exit (after verification)
+            def exit_now(signum, frame):
+                yn = str(raw_input("\n{0} pending write jobs; quit anyway (y/n)?  ".format(srv.pending_write_jobs())))
+
+                if yn in ['y','Y',"yes","YES","Yes"]:
+                    pstderr( "Forcing shutdown")
+                    srv.force_shutdown()
+                    exit(0)
+
+            signal.signal(signal.SIGINT, exit_now)
+
             srv.shutdown()
 
         signal.signal(signal.SIGINT, keyboard_interrupt_handler)
