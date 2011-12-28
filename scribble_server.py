@@ -250,7 +250,9 @@ class scribble_server:
                     if logTuple:
                         (keyspace, columnFamily, columnDictionary) = logTuple
 
-                        self.flush_to_cassandra(keyspace, columnFamily, columnDictionary)
+                        if not self.flush_to_cassandra(keyspace, columnFamily, columnDictionary):
+                            pstderr("Flush was not successful so add it back to the queue...")
+                            self_.push_to_flush_queue(logTuple)
 
                         self_.finished_flush()
 
@@ -259,10 +261,6 @@ class scribble_server:
                 cassandraPool = pycassa.ConnectionPool(
                         keyspace=keyspace,
                         server_list=self_.cassandra_host_list)
-
-                self_.rowsFlushed += sum([len(val)
-                    for val in
-                    columnDictionary.values()])
 
                 if columnFamily not in self.sysmgr.\
                     get_keyspace_column_families(keyspace):
@@ -282,17 +280,34 @@ class scribble_server:
 #
 #               cf.insert(column,{row : line})
 #               cf.insert('lastwrite', {'time' : column })
+                writeResult = False
                 try:
-                    pstderr("Batch inserting into keyspace: '{0} 'and column family: '{1}'".format(keyspace, columnFamily))
-                    cf.batch_insert(columnDictionary)
+                    rowCount = sum([len(val)
+                        for val in
+                        columnDictionary.values()])
+
+                    pstderr("Batch inserting {0} rows into keyspace: '{1} 'and column family: '{2}'".format(rowCount, keyspace, columnFamily))
+
+                    cf.batch_insert(columnDictionary, write_consistency_level=pycassa.ConsistencyLevel.QUORUM)
+
+                    self_.rowsFlushed += rowCount
+
+                    writeResult = True
+
                 except pycassa.NotFoundException:
                     pass
                 except thrift.transport.TTransport.TTransportException:
                     pass
+                finally:
+                    cassandraPool.dispose()
+
+                return writeResult
 
             def shutdown_flush_thread(self):
                 """Shutdown the flush thread"""
                 self.running = False
+
+                self.sysmgr.close()
 
         # Start up the flush thread
         self.flushThread = flushThread()
