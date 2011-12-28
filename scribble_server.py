@@ -258,12 +258,18 @@ class scribble_server:
 
             def flush_to_cassandra(self, keyspace, columnFamily, columnDictionary):
                 """Write this data to Cassandr now"""
+                if keyspace not in self.sysmgr.list_keyspaces():
+                    # Create the keyspace if it does not yet exist
+                    pstderr("Creating keyspace {0}...".format(keyspace))
+                    self.sysmgr.create_keyspace(keyspace, strategy_options = conf.cassandra.new_keyspace_strategy_options)
+
                 cassandraPool = pycassa.ConnectionPool(
                         keyspace=keyspace,
                         server_list=self_.cassandra_host_list)
 
                 if columnFamily not in self.sysmgr.\
                     get_keyspace_column_families(keyspace):
+                    # Create the column family if it does not yet exist
                     self.sysmgr.create_column_family(
                                     keyspace=keyspace,
                                     name=columnFamily,
@@ -286,7 +292,7 @@ class scribble_server:
                         for val in
                         columnDictionary.values()])
 
-                    pstderr("Batch inserting {0} rows into keyspace: '{1} 'and column family: '{2}'".format(rowCount, keyspace, columnFamily))
+                    pstderr("Batch inserting {0} rows into keyspace: '{1}' and column family: '{2}'".format(rowCount, keyspace, columnFamily))
 
                     cf.batch_insert(columnDictionary, write_consistency_level=pycassa.ConsistencyLevel.QUORUM)
 
