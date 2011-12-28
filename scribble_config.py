@@ -11,12 +11,13 @@ class server:
     intervalBetweenPolls = 0.01
     maxPollWait = 0.01
     host = '192.168.117.201'#socket.gethostbyname(socket.gethostname())
-    port = 8080
+    port = 1985
     maxLogBufferSize = 1000
     flushWaitTime = 1
     maxConnectionBacklog = socket.SOMAXCONN
 
 class cassandra:
-    keyspace = "retickr_logs"
-    hosts = ["192.168.117.64","192.168.117.61","192.168.117.62","192.168.117.63"]
-    server_port=9160
+    keyspace = "retickr_logs_for_testing"
+    hosts = ["192.168.117.67"]#,"192.168.117.61","192.168.117.62","192.168.117.63"]
+    server_port = 9160
+    new_keyspace_strategy_options = {'replication_factor': '1'}
