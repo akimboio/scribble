@@ -15,6 +15,7 @@ class server:
     maxLogBufferSize = 1000
     flushWaitTime = 1
     maxConnectionBacklog = socket.SOMAXCONN
+    maxFlushInterval = 5
 
 class cassandra:
     keyspace = "retickr_logs_for_testing"

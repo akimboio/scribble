@@ -74,6 +74,9 @@ class scribble_server:
         # set up the listening socket
         self.setup_networking()
 
+        # Keep track of how long since we last did a full flush
+        self.lastFullFlushTime = time.time()
+
     def setup_networking(self):
         """Create the polling object, and spawn the listening/accepting"""
         """thread"""
@@ -411,7 +414,13 @@ class scribble_server:
                 pstderr(str(e))
 
         # Dump the log data if needed
-        self.flush_log_buffer()
+        if (time.time() - self.lastFullFlushTime) >= conf.server.maxFlushInterval:
+            # It's been a while since we last did a full flush, so do it now
+            self.flush_remainder()
+            self.lastFullFlushTime = time.time()
+        else:
+            # Flush a bit if we have a lot of data
+            self.flush_log_buffer()
 
     def run(self):
         """Go through the motions of running the server, reading and"""
