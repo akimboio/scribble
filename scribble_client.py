@@ -26,7 +26,7 @@ import uuid
 import scribble_lib
 
 
-def write_to_server(logMessage, columnFamily):
+def write_to_server(scribbleWriter, logMessage, columnFamily):
     """Log the logMessage to the server and store it under the specified"""
     """column family"""
     def build_row(connectionTime):
@@ -42,16 +42,17 @@ def write_to_server(logMessage, columnFamily):
                        'columnName': build_row(connectionTime),
                        'value': logMessage}
 
-    scribble_lib.write_data(dataDictionary)
+    scribbleWriter.write_data(dataDictionary)
 
 
 def run(columnFamily):
     """Loop accepting input from stdin and writing it to the log server"""
+    scribbleWriter = scribble_lib.scribble_writer()
     try:
         while True:
             logMessage = sys.stdin.readline().rstrip()
             if logMessage:
-                write_to_server(logMessage, columnFamily)
+                write_to_server(scribbleWriter, logMessage, columnFamily)
     except KeyboardInterrupt:
         return
 

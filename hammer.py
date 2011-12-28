@@ -5,8 +5,9 @@ import sys
 import threading
 import random
 import scribble_client
+import scribble_lib
 
-columnFamilies = ["Users", "Feeds", "Stories"]
+columnFamilies = ["scribble_test"]
 
 
 def hammer(thread_count):
@@ -26,11 +27,14 @@ def hammer(thread_count):
             # We reach deeply into the scribble_client's guts and use
             # it's writeToServer method directory
             try:
-                scribble_client.write_to_server(message + " from thread-{0}".\
+                scribbleWriter = scribble_lib.scribble_writer()
+                scribble_client.write_to_server(scribbleWriter,
+                                              message + " from thread-{0}".\
                                               format(self.id_),
                                               random.choice(columnFamilies))
             except Exception, e:
-                print e
+#                print e
+                pass
 
     hammerThreads = [hammerThread(i) for i in range(0, thread_count)]
 
@@ -42,13 +46,13 @@ if __name__ == "__main__":
     hammer_count = int(sys.argv[1])
     duplicates = int(sys.argv[2])
 
-    print "Hammering with {0} threads".format(hammer_count)
+#    print "Hammering with {0} threads".format(hammer_count)
 
     try:
         for i in range(duplicates):
             threading.Thread(target=(lambda: hammer(hammer_count))).start()
 
-            if (i % 100) == 0:
-                print "{0} of {1} threads dispatched".format(i, duplicates)
+#            if (i % 100) == 0:
+#                print "{0} of {1} threads dispatched".format(i, duplicates)
     except KeyboardInterrupt:
         sys.exit(0)
