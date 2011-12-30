@@ -8,6 +8,7 @@ import types
 
 import scribble_server
 import scribble_client
+import scribble_lib
 
 
 class serverTest(unittest.TestCase):
@@ -31,7 +32,7 @@ class serverTest(unittest.TestCase):
         self_ = self
 
         def unit_test_push_to_flush_queue(self, logTuple):
-            (cf, data) = logTuple
+            (ks, cf, data) = logTuple
 
             self_.bufferedOutput[cf] = self_.bufferedOutput.get(cf, {})
             self_.bufferedOutput[cf].update(data)
@@ -53,8 +54,10 @@ class serverTest(unittest.TestCase):
         # Override the max buffer size so that we know when it should flush
         self.server.maxLogBufferSize = 5
 
+        scribbleWriter = scribble_lib.scribble_writer()
+
         for idx in range(0, 4):
-            scribble_client.write_to_server(baseLogMessage.format(idx),
+            scribble_client.write_to_server(scribbleWriter, baseLogMessage.format(idx),
                                             "Users")
 
             self.server.do_work()
@@ -63,7 +66,7 @@ class serverTest(unittest.TestCase):
         self.assertEqual(0, len(self.bufferedOutput),
                             "Premature dumping of log buffer")
 
-        scribble_client.write_to_server(baseLogMessage.format(4), "Users")
+        scribble_client.write_to_server(scribbleWriter, baseLogMessage.format(4), "Users")
 
         # Manually 'run' the server for a bit
         [self.server.do_work() for i in range(15)]
