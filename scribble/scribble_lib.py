@@ -16,7 +16,7 @@ import socket
 import time
 import random
 
-import scribble_config as conf
+import scribble.scribble_config as conf
 
 
 class scribble_writer:

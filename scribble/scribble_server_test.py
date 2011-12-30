@@ -6,9 +6,9 @@
 import unittest
 import types
 
-import scribble_server
-import scribble_client
-import scribble_lib
+import scribble.scribble_server as scribble_server
+import scribble.scribble_client as scribble_client
+import scribble.scribble_lib as scribble_lib
 
 
 class serverTest(unittest.TestCase):

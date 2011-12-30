@@ -23,7 +23,7 @@ import socket
 import time
 import uuid
 
-import scribble_lib
+import scribble.scribble_lib
 
 
 def write_to_server(scribbleWriter, logMessage, columnFamily):

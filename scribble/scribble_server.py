@@ -16,7 +16,7 @@ import Queue
 import pycassa
 import thrift
 
-import scribble_config as conf
+import scribble.scribble_config as conf
 
 
 def pstderr(msg):
