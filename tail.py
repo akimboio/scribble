@@ -13,6 +13,8 @@ usage:
    where
        <column family> is the name of the column family, probably corresponding to vhost
 
+       foo
+
 """
 
 import pycassa, sys, time, conf
