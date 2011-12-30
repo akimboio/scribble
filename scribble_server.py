@@ -40,7 +40,7 @@ class scribble_server:
     READ_FLAGS = POLL_READ_FLAGS
     CLOSE_FLAGS = POLL_CLOSE_FLAGS
 
-    def __init__(self, useEpoll=False,
+    def __init__(self, useEpoll=True,
                  intervalBetweenPolls=conf.server.intervalBetweenPolls,
                  maxPollWait=conf.server.maxPollWait):
         # The state of the server and the step in the shutdown process
@@ -94,7 +94,8 @@ class scribble_server:
         # file descriptors
         self.maxClients = maxDescriptors - len(openDescriptors) - 2 - 10
 
-        print "Limiting total descriptors to {0}.  Server can support {1} concurrent clients".format(maxDescriptors, self.maxClients)
+        print """Preparing to support {0} concurrent clients""".\
+                format(self.maxClients)
         self.clientLimitSemaphore = threading.Semaphore(value=self.maxClients)
 
     def setup_networking(self):
