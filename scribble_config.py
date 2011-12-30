@@ -6,13 +6,15 @@ import socket
 
 class client:
     sleepTimeBetweenSends = 0.01
+    maxClientConnectionAttempts = 10
+    intervalBetweenConnectionAttempts = 0.5
 
 class server:
     intervalBetweenPolls = 0.01
     maxPollWait = 0.01
     host = '192.168.117.201'#socket.gethostbyname(socket.gethostname())
     port = 1985
-    maxLogBufferSize = 1000
+    maxLogBufferSize = 10000
     flushWaitTime = 1
     maxConnectionBacklog = socket.SOMAXCONN
     maxFlushInterval = 5

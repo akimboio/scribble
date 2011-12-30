@@ -14,11 +14,31 @@ scribble server.
 import json
 import socket
 import time
+import random
 
 import scribble_config as conf
 
 
 class scribble_writer:
+
+    def connect_to_server(self):
+        s = None
+
+        for i in range(conf.client.maxClientConnectionAttempts):
+            try:
+                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            except Exception:
+                sleepIncrement = 0.1 + 2 * i**2 + random.random()
+                time.sleep(sleepIncrement)
+
+        if s:
+            # We finally got a connection
+            s.connect((conf.server.host, conf.server.port))
+        else:
+            print "Could not connect to server"
+
+        return s
+
 
     def write_data(self, dataDictionary, superColumn=False):
         """Given a dictionary describing the write request to Cassandra, connect"""
@@ -36,15 +56,16 @@ class scribble_writer:
 
         jsonData = json.dumps(dataDictionary)
 
-        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.connect((conf.server.host, conf.server.port))
+        s = self.connect_to_server()
 
-        # Loop until we've sent all of the data
-        while len(jsonData) > 0:
-            bytesSent = s.send(jsonData)
+        if s:
+            # Loop until we've sent all of the data
+            while len(jsonData) > 0:
+                bytesSent = s.send(jsonData)
 
-            jsonData = jsonData[bytesSent:]
+                jsonData = jsonData[bytesSent:]
 
-            time.sleep(conf.client.sleepTimeBetweenSends)
+                time.sleep(conf.client.sleepTimeBetweenSends)
 
-        s.close()
+            s.shutdown(socket.SHUT_RDWR)
+            s.close()
