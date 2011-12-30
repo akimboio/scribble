@@ -7,7 +7,7 @@ import select
 import time
 import json
 import random
-import pprint
+import os
 import threading
 import sys
 import signal
@@ -52,8 +52,8 @@ class scribble_server:
         self.clientCount = 0
         self.openClientCount = 0
         self.wentWrong = 0
-        self.pushCount = 0
-        self.popCount = 0
+        self.flushPushCount = 0
+        self.flushPopCount = 0
         self.rowsFlushed = 0
 
         # Do misc configuration
@@ -71,11 +71,31 @@ class scribble_server:
 
         self.spawn_flush_thread()
 
-        # set up the listening socket
+        # set up networking
+        self.setup_client_limiting()
         self.setup_networking()
 
         # Keep track of how long since we last did a full flush
         self.lastFullFlushTime = time.time()
+
+    def setup_client_limiting(self):
+        # So, we don't want to have more file descriptors open
+        # than we can handle (due to open file limitations), so
+        # we keep track of how many files we have open and don't
+        # accept more than that.  This adaptively limits the number
+        # of connections we can serve.  Because we configure listen
+        # to allow the maximum number of connections in the backlog, we
+        # have the OS buffering connections for us
+        maxDescriptors = os.sysconf("SC_OPEN_MAX")
+        openDescriptors = os.listdir("/proc/self/fd")
+
+        # I've not figured out a way to determine how many connections
+        # pycassa may need to function, so we'll reserve a buffer of 10
+        # file descriptors
+        self.maxClients = maxDescriptors - len(openDescriptors) - 2 - 10
+
+        print "Limiting total descriptors to {0}.  Server can support {1} concurrent clients".format(maxDescriptors, self.maxClients)
+        self.clientLimitSemaphore = threading.Semaphore(value=self.maxClients)
 
     def setup_networking(self):
         """Create the polling object, and spawn the listening/accepting"""
@@ -124,37 +144,25 @@ class scribble_server:
                 self.listenSocket.bind((self_.host, self_.port))
                 self.listenSocket.listen(conf.server.maxConnectionBacklog)
 
-                self.listenFileNo = self.listenSocket.fileno()
-
             def run(self):
                 """Begin listening and accepting socket connections"""
-                try:
-                    while self.running:
+                while self.running:
+                    try:
                         client, clientAddress = self.listenSocket.accept()
 
                         if self.running:
-                            self_.clientCount += 1
-                            self_.openClientCount += 1
+                            # Only accept the new connection if we are still running
+                            self_.setup_new_client(client, clientAddress)
+                    except Exception, e:
+                        pstderr("Exception {0}, {1}, {2}".format(e, type(e).__name__, len(self_.fdToClientTupleLookup)))
 
-                            client.setblocking(0)
-
-                            clientFd = client.fileno()
-
-                            self_.fdToClientTupleLookup[clientFd] =\
-                                    (client, clientAddress, str(int(time.time())))
-                            self_.clientLogData[clientFd] = ''
-                            self_.poller.register(client,
-                                                  scribble_server.READ_FLAGS)
-                except Exception, e:
-                    print "Exception", e, type(e).__name__
+                self.listenSocket.close()
 
             def shutdown_accept_thread(self):
                 """Shutdown (gracefully) the accepting thread.  To do this,"""
                 """we make a connection to the thread and then close it to"""
                 """trigger the accept call"""
                 self.running = False
-
-                self.listenSocket.close()
 
                 # Connect so that accept will return...
                 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -168,6 +176,41 @@ class scribble_server:
 
         self.acceptThread = acceptConnectionThread()
         self.acceptThread.start()
+
+    def setup_new_client(self, client, clientAddress):
+        """Set up the appropriate data structures for this client and"""
+        """start polling it"""
+        self.clientLimitSemaphore.acquire()
+
+        client.setblocking(0)
+
+        clientFd = client.fileno()
+
+        self.fdToClientTupleLookup[clientFd] =\
+                (client, clientAddress, str(int(time.time())))
+        self.clientLogData[clientFd] = ''
+        self.poller.register(client,
+                              scribble_server.READ_FLAGS | scribble_server.CLOSE_FLAGS)
+
+        self.clientCount += 1
+        self.openClientCount += 1
+
+    def cleanup_old_client(self, client):
+        """Clean out the old data structures associated with this client"""
+        clientFd = client.fileno()
+
+        del self.clientLogData[clientFd]
+        del self.fdToClientTupleLookup[clientFd]
+
+        self.poller.unregister(client)
+        client.shutdown(socket.SHUT_RDWR)
+        client.close()
+
+        self.openClientCount -= 1
+
+        # Since we are closing down this file descriptor, we can now afford
+        # to open up a new one
+        self.clientLimitSemaphore.release()
 
     def add_data_to_buffer(self, data, connectionTime, superColumn=False):
         """Add this write job to the log buffer so that it may be flushed in"""
@@ -207,7 +250,7 @@ class scribble_server:
     def push_to_flush_queue(self, logTuple):
         """Push this write job to the flush queue so that it will be"""
         """written to Cassandra """
-        self.pushCount += 1
+        self.flushPushCount += 1
 
         self.flushQueue.put(logTuple, block=False)
 
@@ -216,7 +259,7 @@ class scribble_server:
         """write it to Cassandra"""
         try:
             item = self.flushQueue.get(block=True, timeout=0.5)
-            self.popCount += 1
+            self.flushPopCount += 1
         except Queue.Empty:
             item = None
 
@@ -253,11 +296,22 @@ class scribble_server:
                     if logTuple:
                         (keyspace, columnFamily, columnDictionary) = logTuple
 
-                        if not self.flush_to_cassandra(keyspace, columnFamily, columnDictionary):
+                        retry = True
+
+                        try:
+                            retry = not self.flush_to_cassandra(keyspace, columnFamily, columnDictionary)
+                        except Exception, e:
+                            pstderr(str(e))
+                        finally:
+                            # Note: we want to finish the flush even if it
+                            # failed; otherwise we don't call task_done enough
+                            # times...
+                            self_.finished_flush()
+
+                        if retry:
+                            # Could not flush to cassandra so add it back to the queue
                             pstderr("Flush was not successful so add it back to the queue...")
                             self_.push_to_flush_queue(logTuple)
-
-                        self_.finished_flush()
 
             def flush_to_cassandra(self, keyspace, columnFamily, columnDictionary):
                 """Write this data to Cassandr now"""
@@ -282,13 +336,7 @@ class scribble_server:
 
                 # Connect to Cassandra and insert the data
                 cf = pycassa.ColumnFamily(cassandraPool, columnFamily)
-#               Original code
-#               row = str(int(time.time())) + ':' + gethostname() + ':' +
-#                   str(uuid.uuid1())
-#               column = str(int(time.time()))
-#
-#               cf.insert(column,{row : line})
-#               cf.insert('lastwrite', {'time' : column })
+
                 writeResult = False
                 try:
                     rowCount = sum([len(val)
@@ -371,32 +419,31 @@ class scribble_server:
         if eventType & scribble_server.READ_FLAGS:
             # We have data to read
             (client, address, connectionTime) = self.fdToClientTupleLookup[fd]
-            data = client.recv(1024)
+            try:
+                data = client.recv(1024)
+            except Exception, e:
+                print e
+                pass
 
             if '' == data:
                 # Connection closed; clean up this socket and record the data
-                if self.running:
-                    self.openClientCount -= 1
-
                 if len(self.clientLogData[fd]) > 0:
                     message = json.loads(self.clientLogData[fd])
 
                     self.add_data_to_buffer(message, connectionTime)
 
-                self.poller.unregister(client)
-                client.close()
-                del self.clientLogData[fd]
-                del self.fdToClientTupleLookup[fd]
+                self.cleanup_old_client(client)
             else:
                 self.clientLogData[fd] += data
         elif eventType & scribble_server.CLOSE_FLAGS:
             # Something went wrong
             (client, address, connectionTime) = self.fdToClientTupleLookup[fd]
 
-            self.poller.unregister(client)
-            client.close()
+            self.cleanup_old_client(client)
 
             self.wentWrong += 1
+        else:
+            print "****** ELSE!"
 
     def do_work(self):
         """Do any socket activity needed and then checks if the"""
@@ -448,18 +495,24 @@ class scribble_server:
         # Flush anything that's left...
         self.flush_remainder()
 
-        [self.poller.unregister(client) for client in
+        self.fdToClientTupleLookup.clear()
+        self.clientLogData.clear()
+
+        # Close any remaining sockets
+        [self.poller.unregister(client) and
+                client.shutdown(socket.SHUT_RDWR) and
+                client.close()
+                for client in
             [clientTuple[0]
                 for clientTuple
                 in self.fdToClientTupleLookup.values()]]
 
-        self.fdToClientTupleLookup.clear()
-        self.clientLogData.clear()
-
         # Wait on the flush thread to clear things out of the queue
+        print "Waiting on flush queue ({0} jobs pending)...".format(self.flushPushCount - self.flushPopCount)
         self.flushQueue.join()
 
         # Shut down the flush thread
+        print "Shutting down flush thread"
         self.flushThread.shutdown_flush_thread()
         self.flushThread.join()
         sys.stdout.flush()
@@ -475,7 +528,7 @@ class scribble_server:
         self.acceptThread.shutdown_accept_thread()
 
     def pending_write_jobs(self):
-        return self.pushCount - self.popCount
+        return self.flushPushCount - self.flushPopCount
 
     def report(self):
         """Print a human readable report of various server stats"""
@@ -483,20 +536,20 @@ class scribble_server:
         print "\tServed clients: {0}".format(self.clientCount)
         print "\tStill connected: {0}".format(self.openClientCount)
         print "\tWent wrong: {0}".format(self.wentWrong)
-        print "\tTotal pushes to flush queue: {0}".format(self.pushCount)
-        print "\tTotal pops from flush queue: {0}".format(self.popCount)
+        print "\tTotal pushes to flush queue: {0}".format(self.flushPushCount)
+        print "\tTotal pops from flush queue: {0}".format(self.flushPopCount)
         print "\tTotal rows flushed: {0}".format(self.rowsFlushed)
 
     def unlabeled_report(self):
         """Print an unlabled (ie, not human readable) report of various"""
         """server stats.  This output is easier for machines to parse"""
         """than the output of report"""
-        print "{0} {1} {2} {3} {4} {5}".format(
+        print "{0} {1} {2} {3} {4} {5} {6} {7}".format(
                 self.clientCount,
                 self.openClientCount,
                 self.wentWrong,
-                self.pushCount,
-                self.popCount,
+                self.flushPushCount,
+                self.flushPopCount,
                 self.rowsFlushed)
 
 
@@ -543,8 +596,8 @@ if __name__ == "__main__":
         print e
         sys.exit(0)
     finally:
-        srv.unlabeled_report()
-#        srv.report()
+#        srv.unlabeled_report()
+        srv.report()
 
     # Wait for all shutdown to complete
     while not srv.shutdownComplete:
