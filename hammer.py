@@ -4,13 +4,24 @@
 import sys
 import threading
 import random
+import subprocess
+
 import scribble_client
 import scribble_lib
 
 columnFamilies = ["scribble_test"]
 
+print "Generating block..."
+block = "".join(['a' for i in range(1024 * 10)])
+print "Built block"
+
+
+def pstderr(msg):
+    sys.stderr.write("\n" + msg + "\n")
+
 
 def hammer(thread_count):
+
     class hammerThread(threading.Thread):
         def __init__(self, id_):
             self.id_ = id_
@@ -24,6 +35,8 @@ def hammer(thread_count):
                       "AppleWebKit/535.2 (KHTML, like Gecko)" +
                       "Chrome/15.0.874.106 Safari/535.2")
 
+            message = block
+
             # We reach deeply into the scribble_client's guts and use
             # it's writeToServer method directory
             try:
@@ -33,8 +46,7 @@ def hammer(thread_count):
                                               format(self.id_),
                                               random.choice(columnFamilies))
             except Exception, e:
-#                print e
-                pass
+                pstderr(str(e))
 
     hammerThreads = [hammerThread(i) for i in range(0, thread_count)]
 
@@ -43,16 +55,23 @@ def hammer(thread_count):
 
 
 if __name__ == "__main__":
-    hammer_count = int(sys.argv[1])
-    duplicates = int(sys.argv[2])
+    runDuplicates = False
 
-#    print "Hammering with {0} threads".format(hammer_count)
+    execName = sys.argv[0]
+    hammer_count = int(sys.argv[1])
+
+    if len(sys.argv) >= 3:
+        duplicates = int(sys.argv[2])
+        runDuplicates = True
 
     try:
-        for i in range(duplicates):
-            threading.Thread(target=(lambda: hammer(hammer_count))).start()
+        if runDuplicates:
+            subHammers = [subprocess.Popen(["python", execName,
+                                            str(hammer_count)])
+                    for i in range(duplicates)]
 
-#            if (i % 100) == 0:
-#                print "{0} of {1} threads dispatched".format(i, duplicates)
+            [sh.wait() for sh in subHammers]
+        else:
+            hammer(hammer_count)
     except KeyboardInterrupt:
         sys.exit(0)
