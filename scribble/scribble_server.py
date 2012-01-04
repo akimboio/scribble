@@ -2,6 +2,8 @@
 #
 # Created: 9:44 PM, December 9, 2011
 
+__config_file_location__ = "/etc/scribble/scribble.conf"
+
 import socket
 import select
 import time
@@ -15,9 +17,6 @@ import Queue
 
 import pycassa
 import thrift
-
-import scribble.scribble_config as conf
-
 
 def pstderr(msg):
     """Print to stderr.  Simple helper function to keep from"""
@@ -40,9 +39,7 @@ class scribble_server:
     READ_FLAGS = POLL_READ_FLAGS
     CLOSE_FLAGS = POLL_CLOSE_FLAGS
 
-    def __init__(self, useEpoll=True,
-                 intervalBetweenPolls=conf.server.intervalBetweenPolls,
-                 maxPollWait=conf.server.maxPollWait):
+    def __init__(self):
         # The state of the server and the step in the shutdown process
         self.running = True
         self.shutdownComplete = False
@@ -56,16 +53,19 @@ class scribble_server:
         self.flushPopCount = 0
         self.rowsFlushed = 0
 
-        # Do misc configuration
-        self.useEpoll = useEpoll
-        self.host = conf.server.host
-        self.port = conf.server.port
-        self.intervalBetweenPolls = intervalBetweenPolls
-        self.maxPollWait = maxPollWait
-        self.maxLogBufferSize = conf.server.maxLogBufferSize
+        self.conf = self.load_config_settings()
 
-        self.cassandra_host_list = conf.cassandra.hosts
-        self.cassandra_port = conf.cassandra.server_port
+        # Do misc configuration
+        self.useEpoll = True
+        self.host = self.conf["server"]["host"]
+        self.port = int(self.conf["server"]["port"])
+        self.maxConnectionBacklog = socket.SOMAXCONN
+        self.intervalBetweenPolls = float(self.conf["server"]["intervalBetweenPolls"])
+        self.maxPollWait = float(self.conf["server"]["maxPollWait"])
+        self.maxLogBufferSize = int(self.conf["server"]["maxLogBufferSize"])
+
+        self.cassandra_host_list = self.conf["cassandra"]["hosts"]
+        self.cassandra_port = int(self.conf["cassandra"]["server_port"])
 
         self.flushQueue = Queue.Queue()
 
@@ -77,6 +77,10 @@ class scribble_server:
 
         # Keep track of how long since we last did a full flush
         self.lastFullFlushTime = time.time()
+
+    def load_config_settings(self):
+        with open(__config_file_location__, "r") as fin:
+            return json.load(fin)
 
     def setup_client_limiting(self):
         # So, we don't want to have more file descriptors open
@@ -143,7 +147,7 @@ class scribble_server:
                 self.listenSocket.setblocking(1)
 
                 self.listenSocket.bind((self_.host, self_.port))
-                self.listenSocket.listen(conf.server.maxConnectionBacklog)
+                self.listenSocket.listen(self_.maxConnectionBacklog)
 
             def run(self):
                 """Begin listening and accepting socket connections"""
@@ -319,7 +323,7 @@ class scribble_server:
                 if keyspace not in self.sysmgr.list_keyspaces():
                     # Create the keyspace if it does not yet exist
                     pstderr("Creating keyspace {0}...".format(keyspace))
-                    self.sysmgr.create_keyspace(keyspace, strategy_options = conf.cassandra.new_keyspace_strategy_options)
+                    self.sysmgr.create_keyspace(keyspace, strategy_options = self.conf["cassandra"]["new_keyspace_strategy_option"])
 
                 cassandraPool = pycassa.ConnectionPool(
                         keyspace=keyspace,
@@ -462,7 +466,8 @@ class scribble_server:
                 pstderr(str(e))
 
         # Dump the log data if needed
-        if (time.time() - self.lastFullFlushTime) >= conf.server.maxFlushInterval:
+        if (time.time() - self.lastFullFlushTime) >=\
+            self.conf["server"]["maxFlushInterval"]:
             # It's been a while since we last did a full flush, so do it now
             self.flush_remainder()
             self.lastFullFlushTime = time.time()
@@ -555,19 +560,13 @@ class scribble_server:
 
 
 if __name__ == "__main__":
-    try:
+    if len(sys.argv) >= 3:
         useEpoll = bool(sys.argv[1])
         intervalBetweenPolls = float(sys.argv[2])
         maxPollWait = float(sys.argv[3])
-    except:
-        print ("usage: scribble_server.py UseEpoll" +
-              "intervalBetweenPolls maxPollWait")
-        sys.exit(0)
 
     try:
-        srv = scribble_server(useEpoll=True,
-                              intervalBetweenPolls=intervalBetweenPolls,
-                              maxPollWait=maxPollWait)
+        srv = scribble_server()
 
         # Catch the interrupt signal, but resume system calls
         # after the signal is handled
