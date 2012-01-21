@@ -14,17 +14,19 @@ setup(
     version = "0.1",
     author = "Josh Marlow",
     author_email = "josh.marlow@retickr.com",
-    description = ("""A client/server package for allowing multiple servers to log to a centralized Cassandra database."""),
+    description = ("""A client/server package for allowing multiple servers
+                      to log to a centralized Cassandra database."""),
     license = "Closed",
     keywords = "log cassandra",
     url = "http://about.retickr.com",
     packages=['scribble'],
     long_description=read('README'),
-    install_requires=[],
+    install_requires=[
+        "Pycassa==1.1.1"
+        ],
     classifiers=[
         "Development Status :: 4 - Beta",
         "Topic :: Framework",
         "License :: OSI Approved :: Closed",
         ]
 )
-
