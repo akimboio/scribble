@@ -17,9 +17,8 @@ import time
 import random
 import os
 
-__conf__ = json.loads(
-    open(
-        os.path.join(os.path.dirname(__file__), "scribble.conf")))
+with open(os.path.join(os.path.dirname(__file__), "scribble.conf")) as f:
+    __conf__ = json.loads(f.read())
 
 __license__ = "Copyright (c) 2012, Retickr, LLC"
 __organization__ = "Retickr, LLC"
@@ -34,7 +33,7 @@ class scribble_writer:
     def connect_to_server(self):
         s = None
 
-        for i in range(__conf__["client"]["maxClientConnectionAttempts"]):
+        for i in range(int(__conf__["client"]["maxClientConnectionAttempts"])):
             try:
                 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
@@ -44,7 +43,7 @@ class scribble_writer:
 
         if s:
             # We finally got a connection
-            s.connect((__conf__["server"]["host"], __conf__["server"]["port"]))
+            s.connect((__conf__["server"]["host"], int(__conf__["server"]["port"])))
         else:
             print "Could not connect to server"
 
@@ -84,7 +83,7 @@ class scribble_writer:
 
                 jsonData = jsonData[bytesSent:]
 
-                time.sleep(__conf__["client"]["sleepTimeBetweenSends"])
+                time.sleep(float(__conf__["client"]["sleepTimeBetweenSends"]))
 
             s.shutdown(socket.SHUT_RDWR)
             s.close()
