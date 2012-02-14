@@ -19,7 +19,7 @@ import sys
 
 
 def load_config_file():
-    with open(os.path.join(os.path.dirname(__file__), "scribble.conf")) as f:
+    with open(os.path.join("/etc/scribble", "scribble.conf")) as f:
         conf = json.loads(f.read())
 
     return conf
