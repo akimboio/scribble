@@ -173,8 +173,14 @@ class scribble_server:
                                              socket.SO_REUSEADDR, 1)
                 self.listenSocket.setblocking(1)
 
-                self.listenSocket.bind((self_.host, self_.port))
-                self.listenSocket.listen(self_.maxConnectionBacklog)
+                try:
+                    self.listenSocket.bind((self_.host, self_.port))
+                    self.listenSocket.listen(self_.maxConnectionBacklog)
+                except socket.error:
+                    # Another server is already listening on this port,
+                    # so exit
+                    print "Socket is already in use; shutting down"
+                    self_.force_shutdown()
 
             def run(self):
                 """
@@ -643,6 +649,8 @@ class scribble_server:
 
 
 if __name__ == "__main__":
+    srv = None
+
     if len(sys.argv) >= 3:
         useEpoll = bool(sys.argv[1])
         intervalBetweenPolls = float(sys.argv[2])
@@ -677,11 +685,12 @@ if __name__ == "__main__":
         srv.run()
         srv.shutdown()
     except Exception, e:
-        print e
+        print "Error in running: {0}".format(e)
         sys.exit(0)
     finally:
-#        srv.unlabeled_report()
-        srv.report()
+        if srv:
+#           srv.unlabeled_report()
+            srv.report()
 
     # Wait for all shutdown to complete
     while not srv.shutdownComplete:
