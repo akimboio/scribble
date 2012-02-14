@@ -27,7 +27,7 @@ import Queue
 import pycassa
 import thrift
 
-from scribble.scribble_lib import scribble_lib
+import scribble.scribble_lib as scribble_lib
 
 
 __conf__ = scribble_lib.load_config_file()
