@@ -10,7 +10,14 @@ def read(fname):
     return open(os.path.join(os.path.dirname(__file__), fname)).read()
 
 try:
-    os.makedirs("/var/log/scribble")
+    logDir = "/var/log/scribble"
+    mode=0777
+    # Haven't quite figured out why, but makedirs doesn't use the
+    # permissions we ask for.  The Python documentation says
+    # it is ignored on some platforms.  How helpful.  In any
+    # case, chmod does owrk
+    os.makedirs(logDir, mode=mode)
+    os.chmod(logDir, mode)
 except OSError:
     pass
 
