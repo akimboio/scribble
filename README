@@ -13,7 +13,7 @@ The scribble package provides facilities for doing buffered log writes into Cass
     The scribble_client is a short-lived process whose purpose is to read from standard in
     and write to a scribble server running on the same machine.
 
-* tail.py
+* scribble_tail.py
     A simple utility that pulls logs out of Cassandra and writes them to stdout.  It behaves
     like 'tail -f', continually pulling more recent data and writing it to stdout.
 
@@ -28,9 +28,9 @@ Run scribble_server like this:
 
     python scribble_server.py
 
-Run tail like this:
+Run scribble_tail like this:
 
-    python tail.py COLUMN_FAMILY
+    python scribble_tail.py COLUMN_FAMILY
 
 Getting Help
 -----------
