@@ -43,13 +43,11 @@ class scribble_writer:
             # Child
             os.setsid()
             os.umask(0)
-            print "In first fork"
 
             if 0 == os.fork():
                 # Child but not a session leader
                 # redirect standard file descriptors
                 # TODO: redirect stdout to some log file for the server...
-                print "In second fork"
                 sys.stdout.flush()
                 sys.stderr.flush()
                 si = file('/dev/null', 'r')
@@ -61,9 +59,9 @@ class scribble_writer:
 
                 # Time to become the server
                 try:
-                    os.execvp("python", ("scribble_server.py"))
+                    server_name = "scribble_server.py"
+                    os.execvp(server_name, [server_name])
                 except OSError:
-                    print "OSError in exec"
                     sys.exit(0)
             else:
                 # Parent
@@ -87,12 +85,13 @@ class scribble_writer:
         for i in range(int(__conf__["client"]["maxClientConnectionAttempts"])):
             try:
                 s = try_connect()
-                print "Connection succeeded"
+                break
             except socket.error:
-                print "Cannot connect, starting scribble"
+                print "No scribble server found.  Starintg one..."
                 self.start_scribble_server()
         else:
-            print "Could not connect to server. Giving up"
+            print "Could not connect to server and could not start one." +\
+                  "Giving up"
             sys.exit(0)
 
         return s
