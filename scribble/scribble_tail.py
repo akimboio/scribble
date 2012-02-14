@@ -20,11 +20,12 @@ import pycassa
 import sys
 import time
 import thrift
-import os.path
-import json
 
-with open(os.path.join(os.path.dirname(__file__), "scribble.conf")) as f:
-    __conf__ = json.loads(f.read())
+from scribble.scribble_lib import scribble_lib
+
+
+__conf__ = scribble_lib.load_config_file()
+
 
 def tail():
     ii = 0
