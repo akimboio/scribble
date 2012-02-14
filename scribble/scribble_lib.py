@@ -14,8 +14,8 @@ scribble server.
 import json
 import socket
 import time
-import random
 import os
+import sys
 
 with open(os.path.join(os.path.dirname(__file__), "scribble.conf")) as f:
     __conf__ = json.loads(f.read())
@@ -30,22 +30,61 @@ __authors__ = [
 
 class scribble_writer:
 
+    def start_scribble_server(self):
+        if 0 == os.fork():
+            # Child
+            os.setsid()
+            os.umask(0)
+            print "In first fork"
+
+            if 0 == os.fork():
+                # Child but not a session leader
+                # redirect standard file descriptors
+                # TODO: redirect stdout to some log file for the server...
+                print "In second fork"
+                sys.stdout.flush()
+                sys.stderr.flush()
+                si = file('/dev/null', 'r')
+                so = file('/dev/null', 'a+')
+                se = file('/dev/null', 'a+', 0)
+                os.dup2(si.fileno(), sys.stdin.fileno())
+                os.dup2(so.fileno(), sys.stdout.fileno())
+                os.dup2(se.fileno(), sys.stderr.fileno())
+
+                # Time to become the server
+                try:
+                    os.execvp("python", ("scribble_server.py"))
+                except OSError:
+                    print "OSError in exec"
+                    sys.exit(0)
+            else:
+                # Parent
+                sys.exit(0)
+        else:
+            # Wait a couple of seconds for the server to get in full swing
+            # then return to our life as a client
+            sleepIncrement = 2
+            time.sleep(sleepIncrement)
+
     def connect_to_server(self):
+        def try_connect():
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.connect((__conf__["server"]["host"], int(__conf__["server"]["port"])))
+
+            return s
+
         s = None
 
         for i in range(int(__conf__["client"]["maxClientConnectionAttempts"])):
             try:
-                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-
-            except Exception:
-                sleepIncrement = 0.1 + 2 * i ** 2 + random.random()
-                time.sleep(sleepIncrement)
-
-        if s:
-            # We finally got a connection
-            s.connect((__conf__["server"]["host"], int(__conf__["server"]["port"])))
+                s = try_connect()
+                print "Connection succeeded"
+            except socket.error:
+                print "Cannot connect, starting scribble"
+                self.start_scribble_server()
         else:
-            print "Could not connect to server"
+            print "Could not connect to server. Giving up"
+            sys.exit(0)
 
         return s
 
