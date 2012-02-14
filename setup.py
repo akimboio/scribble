@@ -29,5 +29,12 @@ setup(
         "Development Status :: 4 - Beta",
         "Topic :: Framework",
         "License :: OSI Approved :: Closed",
-        ]
+        ],
+    data_files=[
+        ('/etc/scribble', ['scribble/scribble.conf']) # where to put our lovely config files
+        ],
+    scripts=[
+        'scribble/scribble_client.py',
+        'scribble/scribble_server.py',
+        'scribble/scribble_tail.py']
 )
