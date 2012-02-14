@@ -22,31 +22,48 @@ import sys
 import socket
 import time
 import uuid
+import json
+import os.path
 
 import scribble.scribble_lib as scribble_lib
 
+__conf__ = json.loads(
+    open(
+        os.path.join(os.path.dirname(__file__), "scribble.conf")))
+
 
 def write_to_server(scribbleWriter, logMessage, columnFamily):
-    """Log the logMessage to the server and store it under the specified"""
-    """column family"""
+    """
+    Log the logMessage to the server and store it under the specified
+    column family
+    """
+
     def build_row(connectionTime):
-        """Generate a unique rowID for this particular log message"""
+        """
+        Generate a unique rowID for this particular log message
+        """
+
         return "{0}:{1}:{2}".format(connectionTime, socket.gethostname(),
                                     uuid.uuid1())
 
     connectionTime = str(time.time())
 
-    dataDictionary = {'keyspace': scribble_lib.conf.cassandra.keyspace,
-                       'columnFamily': columnFamily,
-                       'rowKey': connectionTime,
-                       'columnName': build_row(connectionTime),
-                       'value': logMessage}
+    dataDictionary = {
+        'keyspace': __conf__["cassandra"]["keyspace"],
+        'columnFamily': columnFamily,
+        'rowKey': connectionTime,
+        'columnName': build_row(connectionTime),
+        'value': logMessage
+        }
 
     scribbleWriter.write_data(dataDictionary)
 
 
 def run(columnFamily):
-    """Loop accepting input from stdin and writing it to the log server"""
+    """
+    Loop accepting input from stdin and writing it to the log server
+    """
+
     scribbleWriter = scribble_lib.scribble_writer()
     try:
         while True:
