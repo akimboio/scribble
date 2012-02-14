@@ -27,8 +27,11 @@ import Queue
 import pycassa
 import thrift
 
-with open(os.path.join(os.path.dirname(__file__), "scribble.conf")) as f:
-    __conf__ = json.loads(f.read())
+from scribble.scribble_lib import scribble_lib
+
+
+__conf__ = scribble_lib.load_config_file()
+
 
 __license__ = "Copyright (c) 2012, Retickr, LLC"
 __organization__ = "Retickr, LLC"
@@ -85,7 +88,8 @@ class scribble_server:
         self.host = self.conf["server"]["host"]
         self.port = int(self.conf["server"]["port"])
         self.maxConnectionBacklog = socket.SOMAXCONN
-        self.intervalBetweenPolls = float(self.conf["server"]["intervalBetweenPolls"])
+        self.intervalBetweenPolls =\
+            float(self.conf["server"]["intervalBetweenPolls"])
         self.maxPollWait = float(self.conf["server"]["maxPollWait"])
         self.maxLogBufferSize = int(self.conf["server"]["maxLogBufferSize"])
 
@@ -192,10 +196,12 @@ class scribble_server:
                         client, clientAddress = self.listenSocket.accept()
 
                         if self.running:
-                            # Only accept the new connection if we are still running
+                            # Only accept the new connection if we are
+                            # still running
                             self_.setup_new_client(client, clientAddress)
                     except Exception, e:
-                        pstderr("Exception {0}, {1}, {2}".format(e, type(e).__name__, len(self_.fdToClientTupleLookup)))
+                        pstderr("Exception {0}, {1}, {2}".format(e,
+                        type(e).__name__, len(self_.fdToClientTupleLookup)))
 
                 self.listenSocket.close()
 
@@ -237,7 +243,8 @@ class scribble_server:
                 (client, clientAddress, str(int(time.time())))
         self.clientLogData[clientFd] = ''
         self.poller.register(client,
-                              scribble_server.READ_FLAGS | scribble_server.CLOSE_FLAGS)
+                              scribble_server.READ_FLAGS |
+                              scribble_server.CLOSE_FLAGS)
 
         self.clientCount += 1
         self.openClientCount += 1
@@ -288,8 +295,8 @@ class scribble_server:
             make_key_if_needed(self.logBuffer[keyspace][columnFamily][rowKey],
                             superColumnName)
             make_key_if_needed(
-                self.logBuffer[keyspace][columnFamily][rowKey][superColumnName],
-                            columnName)
+               self.logBuffer[keyspace][columnFamily][rowKey][superColumnName],
+                           columnName)
 
             self.logBuffer[keyspace][columnFamily][rowKey][superColumnName]\
                             [columnName] = columnValue
@@ -365,7 +372,8 @@ class scribble_server:
                         retry = True
 
                         try:
-                            retry = not self.flush_to_cassandra(keyspace, columnFamily, columnDictionary)
+                            retry = not self.flush_to_cassandra(keyspace,
+                                    columnFamily, columnDictionary)
                         except Exception, e:
                             pstderr(str(e))
                         finally:
@@ -375,11 +383,14 @@ class scribble_server:
                             self_.finished_flush()
 
                         if retry:
-                            # Could not flush to cassandra so add it back to the queue
-                            pstderr("Flush was not successful so add it back to the queue...")
+                            # Could not flush to cassandra so add it
+                            # back to the queue
+                            pstderr("Flush was not successful so add it back"
+                                    "to the queue...")
                             self_.push_to_flush_queue(logTuple)
 
-            def flush_to_cassandra(self, keyspace, columnFamily, columnDictionary):
+            def flush_to_cassandra(self, keyspace, columnFamily,
+                    columnDictionary):
                 """
                 Write this data to Cassandr now
                 """
@@ -389,7 +400,8 @@ class scribble_server:
                     pstderr("Creating keyspace {0}...".format(keyspace))
                     self.sysmgr.create_keyspace(
                         keyspace,
-                        strategy_options=self.conf["cassandra"]["new_keyspace_strategy_option"])
+                        strategy_options=self.conf["cassandra"]\
+                                ["new_keyspace_strategy_option"])
 
                 cassandraPool = pycassa.ConnectionPool(
                         keyspace=keyspace,
@@ -414,9 +426,13 @@ class scribble_server:
                         for val in
                         columnDictionary.values()])
 
-                    pstderr("Batch inserting {0} rows into keyspace: '{1}' and column family: '{2}'".format(rowCount, keyspace, columnFamily))
+                    pstderr("Batch inserting {0} rows into keyspace: '{1}'"
+                            "and column family: '{2}'".format(rowCount,
+                                keyspace, columnFamily))
 
-                    cf.batch_insert(columnDictionary, write_consistency_level=pycassa.ConsistencyLevel.QUORUM)
+                    cf.batch_insert(columnDictionary,
+                            write_consistency_level = \
+                                    pycassa.ConsistencyLevel.QUORUM)
 
                     self_.rowsFlushed += rowCount
 
@@ -481,7 +497,7 @@ class scribble_server:
                     # Write to Cassandra
                     try:
                         self.push_to_flush_queue((keyspace, columnFamily,
-                                               self.logBuffer[keyspace][columnFamily]))
+                                       self.logBuffer[keyspace][columnFamily]))
                     except Exception, e:
                         pstderr(str(e))
                         pass
@@ -597,7 +613,8 @@ class scribble_server:
                 in self.fdToClientTupleLookup.values()]]
 
         # Wait on the flush thread to clear things out of the queue
-        print "Waiting on flush queue ({0} jobs pending)...".format(self.flushPushCount - self.flushPopCount)
+        print "Waiting on flush queue ({0} jobs pending)...".\
+                format(self.flushPushCount - self.flushPopCount)
         self.flushQueue.join()
 
         # Shut down the flush thread
@@ -663,12 +680,16 @@ if __name__ == "__main__":
         # after the signal is handled
         def keyboard_interrupt_handler(signum, frame):
             pstderr("Shutting down...")
-            pstderr("Flushing {0} write jobs to database...".format(srv.pending_write_jobs()))
+            pstderr("Flushing {0} write jobs to database...".\
+                    format(srv.pending_write_jobs()))
 
             # It's *possible* that the server could hang while being
-            # shutdown; in that case, we want to be able to forcefully exit (after verification)
+            # shutdown; in that case, we want to be able to forcefully exit
+            # (after verification)
             def exit_now(signum, frame):
-                yn = str(raw_input("\n{0} pending write jobs; quit anyway (y/n)?  ".format(srv.pending_write_jobs())))
+                yn = str(raw_input("\n{0} pending write jobs;"\
+                        "quit anyway (y/n)?  ".\
+                        format(srv.pending_write_jobs())))
 
                 if yn in ['y', 'Y', "yes", "YES", "Yes"]:
                     pstderr("Forcing shutdown")
