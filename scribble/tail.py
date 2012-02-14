@@ -23,9 +23,8 @@ import thrift
 import os.path
 import json
 
-__conf__ = __conf__ = json.loads(
-    open(
-        os.path.join(os.path.dirname(__file__), "scribble.conf")))
+with open(os.path.join(os.path.dirname(__file__), "scribble.conf")) as f:
+    __conf__ = json.loads(f.read())
 
 def tail():
     ii = 0
