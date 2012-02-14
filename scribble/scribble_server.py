@@ -385,7 +385,7 @@ class scribble_server:
                         if retry:
                             # Could not flush to cassandra so add it
                             # back to the queue
-                            pstderr("Flush was not successful so add it back"
+                            pstderr("Flush was not successful so add it back "
                                     "to the queue...")
                             self_.push_to_flush_queue(logTuple)
 
@@ -518,7 +518,7 @@ class scribble_server:
             try:
                 data = client.recv(1024)
             except Exception, e:
-                print e
+                print "#### handling_event_error", e
                 pass
 
             if '' == data:
