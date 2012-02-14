@@ -17,8 +17,15 @@ import time
 import os
 import sys
 
-with open(os.path.join(os.path.dirname(__file__), "scribble.conf")) as f:
-    __conf__ = json.loads(f.read())
+
+def load_config_file():
+    with open(os.path.join(os.path.dirname(__file__), "scribble.conf")) as f:
+        conf = json.loads(f.read())
+
+    return conf
+
+
+__conf__ = load_config_file()
 
 __license__ = "Copyright (c) 2012, Retickr, LLC"
 __organization__ = "Retickr, LLC"
@@ -27,6 +34,7 @@ __authors__ = [
     "Micah Hausler <micah.hausler+scribble@retickr.com>",
     "Adam Haney <adam.haney+scribble@retickr.com"
     ]
+
 
 class scribble_writer:
 
@@ -69,7 +77,8 @@ class scribble_writer:
     def connect_to_server(self):
         def try_connect():
             s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            s.connect((__conf__["server"]["host"], int(__conf__["server"]["port"])))
+            s.connect((__conf__["server"]["host"],
+                      int(__conf__["server"]["port"])))
 
             return s
 
