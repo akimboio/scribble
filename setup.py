@@ -9,6 +9,18 @@ from setuptools import setup
 def read(fname):
     return open(os.path.join(os.path.dirname(__file__), fname)).read()
 
+try:
+    logDir = "/var/log/scribble"
+    mode=0777
+    # Haven't quite figured out why, but makedirs doesn't use the
+    # permissions we ask for.  The Python documentation says
+    # it is ignored on some platforms.  How helpful.  In any
+    # case, chmod does owrk
+    os.makedirs(logDir, mode=mode)
+    os.chmod(logDir, mode)
+except OSError:
+    pass
+
 setup(
     name = "Scribble",
     version = "0.1",
@@ -29,5 +41,12 @@ setup(
         "Development Status :: 4 - Beta",
         "Topic :: Framework",
         "License :: OSI Approved :: Closed",
-        ]
+        ],
+    data_files=[
+        ('/etc/scribble', ['scribble/scribble.conf']) # where to put our lovely config files
+        ],
+    scripts=[
+        'scribble/scribble_client.py',
+        'scribble/scribble_server.py',
+        'scribble/scribble_tail.py']
 )

@@ -22,16 +22,11 @@ import sys
 import socket
 import time
 import uuid
-import json
-import os.path
 
 import scribble.scribble_lib as scribble_lib
 
-with open(os.path.join(os.path.dirname(__file__), "scribble.conf")) as f:
-    __conf__ = json.loads(f.read())
-#__conf__ = json.loads(
-#    open(
-#        os.path.join(os.path.dirname(__file__), "scribble.conf")))
+
+__conf__ = scribble_lib.load_config_file()
 
 
 def write_to_server(scribbleWriter, logMessage, columnFamily):

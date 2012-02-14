@@ -14,12 +14,21 @@ scribble server.
 import json
 import socket
 import time
-import random
 import os
+import sys
 
-__conf__ = json.loads(
-    open(
-        os.path.join(os.path.dirname(__file__), "scribble.conf")))
+
+__conf_path__ = "/etc/scribble/scribble.conf"
+__server_log_path__ = "/var/log/scribble/server.log"
+
+def load_config_file():
+    with open(os.path.join(__conf_path__)) as f:
+        conf = json.loads(f.read())
+
+    return conf
+
+
+__conf__ = load_config_file()
 
 __license__ = "Copyright (c) 2012, Retickr, LLC"
 __organization__ = "Retickr, LLC"
@@ -29,24 +38,70 @@ __authors__ = [
     "Adam Haney <adam.haney+scribble@retickr.com"
     ]
 
+
 class scribble_writer:
 
+    def start_scribble_server(self):
+        if 0 == os.fork():
+            # Child
+            os.setsid()
+            os.umask(0)
+
+            if 0 == os.fork():
+                # Child but not a session leader
+                # redirect standard file descriptors
+                # TODO: redirect stdout to some log file for the server...
+                sys.stdout.flush()
+                sys.stderr.flush()
+
+                try:
+                    si = file('/dev/null', 'r')
+                    so = file(__server_log_path__, 'a+')
+                    se = file(__server_log_path__, 'a+', 0)
+                except IOError, e:
+                    print "IOError starting server: {0}".format(e)
+                    sys.exit(0)
+
+                os.dup2(si.fileno(), sys.stdin.fileno())
+                os.dup2(so.fileno(), sys.stdout.fileno())
+                os.dup2(se.fileno(), sys.stderr.fileno())
+
+                # Time to become the server
+                try:
+                    server_name = "scribble_server.py"
+                    os.execvp(server_name, [server_name])
+                except OSError:
+                    sys.exit(0)
+            else:
+                # Parent
+                sys.exit(0)
+        else:
+            # Wait a couple of seconds for the server to get in full swing
+            # then return to our life as a client
+            sleepIncrement = 2
+            time.sleep(sleepIncrement)
+
     def connect_to_server(self):
+        def try_connect():
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.connect((__conf__["server"]["host"],
+                      int(__conf__["server"]["port"])))
+
+            return s
+
         s = None
 
-        for i in range(__conf__["client"]["maxClientConnectionAttempts"]):
+        for i in range(int(__conf__["client"]["maxClientConnectionAttempts"])):
             try:
-                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-
-            except Exception:
-                sleepIncrement = 0.1 + 2 * i ** 2 + random.random()
-                time.sleep(sleepIncrement)
-
-        if s:
-            # We finally got a connection
-            s.connect((__conf__["server"]["host"], __conf__["server"]["port"]))
+                s = try_connect()
+                break
+            except socket.error:
+                print "No scribble server found.  Startintg one..."
+                self.start_scribble_server()
         else:
-            print "Could not connect to server"
+            print "Could not connect to server and could not start one." +\
+                  "Giving up"
+            sys.exit(0)
 
         return s
 
@@ -84,7 +139,7 @@ class scribble_writer:
 
                 jsonData = jsonData[bytesSent:]
 
-                time.sleep(__conf__["client"]["sleepTimeBetweenSends"])
+                time.sleep(float(__conf__["client"]["sleepTimeBetweenSends"]))
 
             s.shutdown(socket.SHUT_RDWR)
             s.close()
