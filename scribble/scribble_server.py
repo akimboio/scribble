@@ -27,9 +27,9 @@ import Queue
 import pycassa
 import thrift
 
-__conf__ = json.loads(
-    open(
-        os.path.join(os.path.dirname(__file__), "scribble.conf")))
+with open(os.path.join(os.path.dirname(__file__), "scribble.conf")) as f:
+    __conf__ = json.loads(f.read())
+
 __license__ = "Copyright (c) 2012, Retickr, LLC"
 __organization__ = "Retickr, LLC"
 __authors__ = [
@@ -111,7 +111,7 @@ class scribble_server:
         # of connections we can serve.  Because we configure listen
         # to allow the maximum number of connections in the backlog, we
         # have the OS buffering connections for us
-        maxDescriptors = os.sysconf("SC_OPEN_MAX")
+        maxDescriptors = int(os.sysconf("SC_OPEN_MAX"))
         openDescriptors = os.listdir("/proc/self/fd")
 
         # I've not figured out a way to determine how many connections
@@ -539,7 +539,7 @@ class scribble_server:
 
         # Dump the log data if needed
         if (time.time() - self.lastFullFlushTime) >=\
-            self.conf["server"]["maxFlushInterval"]:
+            float(self.conf["server"]["maxFlushInterval"]):
             # It's been a while since we last did a full flush, so do it now
             self.flush_remainder()
             self.lastFullFlushTime = time.time()
