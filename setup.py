@@ -9,6 +9,11 @@ from setuptools import setup
 def read(fname):
     return open(os.path.join(os.path.dirname(__file__), fname)).read()
 
+try:
+    os.makedirs("/var/log/scribble")
+except OSError:
+    pass
+
 setup(
     name = "Scribble",
     version = "0.1",
