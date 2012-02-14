@@ -1,0 +1,46 @@
+========
+Scribble
+========
+
+The scribble package provides facilities for doing buffered log writes into Cassandra.
+
+* scribble_server.py
+
+    The scribble_server is a long running process that accepts client connections, buffers
+    the client output and then dumps it to the Cassandra db periodically.
+
+* scribble_client.py
+    The scribble_client is a short-lived process whose purpose is to read from standard in
+    and write to a scribble server running on the same machine.
+
+* tail.py
+    A simple utility that pulls logs out of Cassandra and writes them to stdout.  It behaves
+    like 'tail -f', continually pulling more recent data and writing it to stdout.
+
+Documentation
+-------------
+
+Run scribble_client like this:
+
+    python scribble_client.py COLUMN_FAMILY
+
+Run scribble_server like this:
+
+    python scribble_server.py
+
+Run tail like this:
+
+    python tail.py COLUMN_FAMILY
+
+Getting Help
+-----------
+
+Micah Hausler was the original author of scribble.
+Josh Marlow elaborated on it considerably.
+Adam Haney made it pretty/deployable/usable.
+
+They can be reached, respectively, at:
+
+micah.hausler@retickr.com
+josh.marlow@retickr.com
+adam.haney@retickr.com
