@@ -18,8 +18,11 @@ import os
 import sys
 
 
+__conf_path__ = "/etc/scribble/scribble.conf"
+__server_log_path__ = "/var/log/scribble/server.log"
+
 def load_config_file():
-    with open(os.path.join("/etc/scribble", "scribble.conf")) as f:
+    with open(os.path.join(__conf_path__)) as f:
         conf = json.loads(f.read())
 
     return conf
@@ -50,9 +53,15 @@ class scribble_writer:
                 # TODO: redirect stdout to some log file for the server...
                 sys.stdout.flush()
                 sys.stderr.flush()
-                si = file('/dev/null', 'r')
-                so = file('/dev/null', 'a+')
-                se = file('/dev/null', 'a+', 0)
+
+                try:
+                    si = file('/dev/null', 'r')
+                    so = file(__server_log_path__, 'a+')
+                    se = file(__server_log_path__, 'a+', 0)
+                except IOError, e:
+                    print "IOError starting server: {0}".format(e)
+                    sys.exit(0)
+
                 os.dup2(si.fileno(), sys.stdin.fileno())
                 os.dup2(so.fileno(), sys.stdout.fileno())
                 os.dup2(se.fileno(), sys.stderr.fileno())
@@ -87,7 +96,7 @@ class scribble_writer:
                 s = try_connect()
                 break
             except socket.error:
-                print "No scribble server found.  Starintg one..."
+                print "No scribble server found.  Startintg one..."
                 self.start_scribble_server()
         else:
             print "Could not connect to server and could not start one." +\
