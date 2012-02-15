@@ -1,4 +1,5 @@
-#! /usr/bin/python
+#!/srv/web-api-config/pythonenv/scribble-production/bin/python
+# /usr/bin/python
 """
 scribble.py - python logging utility to cassandra
 

@@ -1,4 +1,5 @@
-#!/usr/bin/python
+#!/srv/web-api-config/pythonenv/scribble-production/bin/python
+# /usr/bin/python
 
 """
 tail.py - python log tail utility from cassandra
