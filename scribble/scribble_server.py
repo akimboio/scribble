@@ -386,6 +386,9 @@ class scribble_server:
                                     "to the queue...")
                             self_.push_to_flush_queue(logTuple)
 
+                    # Note: success or fail, we don't want to try to flush *constantly*
+                    time.sleep(float(self_.conf["server"]["maxFlushInterval"]))
+
             def flush_to_cassandra(self, keyspace, columnFamily,
                     columnDictionary):
                 """
