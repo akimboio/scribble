@@ -45,7 +45,7 @@ setup(
         "License :: OSI Approved :: Closed",
         ],
     data_files=[
-        ('/etc/scribble', ['scribble/scribble.conf']) # where to put our lovely config files
+        ('/srv/scribble/scribble', ['scribble/scribble.conf']) # where to put our lovely config files
         ],
     scripts=[
         'scribble/scribble_client.py',
