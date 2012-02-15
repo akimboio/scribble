@@ -354,10 +354,6 @@ class scribble_server:
 
                 self.running = True
 
-                self.sysmgr = pycassa.SystemManager("{0}:{1}".\
-                        format(random.choice(self_.cassandra_host_list),
-                               self_.cassandra_port))
-
             def run(self):
                 """
                 Loop as long as the server is running and grab write
@@ -395,11 +391,14 @@ class scribble_server:
                 """
                 Write this data to Cassandr now
                 """
+                sysmgr = pycassa.SystemManager("{0}:{1}".\
+                        format(random.choice(self_.cassandra_host_list),
+                               self_.cassandra_port))
 
-                if keyspace not in self.sysmgr.list_keyspaces():
+                if keyspace not in sysmgr.list_keyspaces():
                     # Create the keyspace if it does not yet exist
                     pstderr("Creating keyspace {0}...".format(keyspace))
-                    self.sysmgr.create_keyspace(
+                    sysmgr.create_keyspace(
                         keyspace,
                         strategy_options=self.conf["cassandra"]\
                                 ["new_keyspace_strategy_option"])
@@ -408,10 +407,10 @@ class scribble_server:
                         keyspace=keyspace,
                         server_list=self_.cassandra_host_list)
 
-                if columnFamily not in self.sysmgr.\
+                if columnFamily not in sysmgr.\
                     get_keyspace_column_families(keyspace):
                     # Create the column family if it does not yet exist
-                    self.sysmgr.create_column_family(
+                    sysmgr.create_column_family(
                                     keyspace=keyspace,
                                     name=columnFamily,
                                     comparator_type=pycassa.UTF8_TYPE,
@@ -446,13 +445,13 @@ class scribble_server:
                 finally:
                     cassandraPool.dispose()
 
+                sysmgr.close()
+
                 return writeResult
 
             def shutdown_flush_thread(self):
                 """Shutdown the flush thread"""
                 self.running = False
-
-                self.sysmgr.close()
 
         # Start up the flush thread
         self.flushThread = flushThread()
