@@ -417,6 +417,8 @@ class scribble_server:
                                     key_validation_class=pycassa.UTF8_TYPE,
                                     key_alias='data')
 
+                sysmgr.close()
+
                 # Connect to Cassandra and insert the data
                 cf = pycassa.ColumnFamily(cassandraPool, columnFamily)
 
@@ -444,8 +446,6 @@ class scribble_server:
                     pass
                 finally:
                     cassandraPool.dispose()
-
-                sysmgr.close()
 
                 return writeResult
 
