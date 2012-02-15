@@ -36,7 +36,7 @@ setup(
     packages=['scribble'],
     long_description=read('README'),
     install_requires=[
-        "Pycassa==1.1.1",
+        "Pycassa==1.3",
         "Thrift"
         ],
     classifiers=[
