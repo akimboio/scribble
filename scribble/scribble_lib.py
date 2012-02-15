@@ -18,7 +18,7 @@ import os
 import sys
 
 
-__conf_path__ = "/etc/scribble/scribble.conf"
+__conf_path__ = "/srv/scribble/scribble/scribble.conf"
 __server_log_path__ = "/var/log/scribble/server.log"
 
 def load_config_file():
