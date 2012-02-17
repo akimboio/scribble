@@ -439,7 +439,7 @@ class scribble_server:
                             write_consistency_level = \
                                     pycassa.ConsistencyLevel.QUORUM)
 
-                    cf.insert("lastwrite", {"time": str(time.time())})
+                    cf.insert("lastwrite", {"time": str(int(time.time()))})
 
                     self_.rowsFlushed += rowCount
 
