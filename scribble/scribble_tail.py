@@ -29,12 +29,10 @@ __conf__ = scribble_lib.load_config_file()
 
 
 def tail():
-    ii = 0
-    start_time = int(cf.get('lastwrite')['time'])
-
     while True:
         try:
-            rows = cf.get(str(start_time + ii))
+            key_time = str(int(time.time()) - 10)
+            rows = cf.get(key_time)
 
             for jj in rows.values():
                 sys.stdout.writelines(jj + '\n')
@@ -44,15 +42,13 @@ def tail():
             pass
         except KeyboardInterrupt:
             exit()
-        except Exception, e:
-            #print e
+        except Exception:
             pass
         except:
             pass
 
         try:
             time.sleep(1)
-            ii = ii + 1
         except KeyboardInterrupt:
             exit()
 
