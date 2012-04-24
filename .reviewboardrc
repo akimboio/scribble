@@ -1,2 +1,2 @@
-REPOSITORY = scribble.git
-REVIEWBOARD_URL = http://reviewboard.retickr.com
+REPOSITORY = "scribble.git"
+REVIEWBOARD_URL = "http://reviewboard.retickr.com"
