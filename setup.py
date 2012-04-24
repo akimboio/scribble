@@ -25,7 +25,7 @@ except OSError:
 
 setup(
     name = "Scribble",
-    version = "0.1",
+    version = "0.1.1",
     author = "Josh Marlow",
     author_email = "josh.marlow@retickr.com",
     description = ("""A client/server package for allowing multiple servers
