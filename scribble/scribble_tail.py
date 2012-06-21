@@ -1,4 +1,4 @@
-#!/srv/web-api-config/pythonenv/scribble-production/bin/python
+#!/srv/infrastructure/pythonenv/scribble/bin/python
 # /usr/bin/python
 
 """
